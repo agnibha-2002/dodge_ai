@@ -6,6 +6,7 @@ import { InspectorCard } from "./InspectorCard";
 import { ChatPanel } from "./ChatPanel";
 import { RecordsModal } from "./RecordsModal";
 import { DebugPanel } from "./NodePanel";
+import { apiUrl } from "./api";
 import type {
   ApiEdge,
   ApiExpandResponse,
@@ -21,7 +22,6 @@ import type {
 import "./App.css";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 
-const API_BASE  = "http://localhost:8000";
 const MAX_NODES = 200;
 const MAX_EDGES = 500;
 
@@ -55,8 +55,8 @@ async function safeFetch<T>(url: string): Promise<T> {
 
 async function fetchInitial(): Promise<{ nodes: ApiNode[]; edges: ApiEdge[] }> {
   const [nodes, edges] = await Promise.all([
-    safeFetch<unknown>(`${API_BASE}/nodes`),
-    safeFetch<unknown>(`${API_BASE}/edges`),
+    safeFetch<unknown>(apiUrl("/nodes")),
+    safeFetch<unknown>(apiUrl("/edges")),
   ]);
   if (!Array.isArray(nodes)) throw new Error("Expected array from /nodes");
   if (!Array.isArray(edges)) throw new Error("Expected array from /edges");
@@ -65,7 +65,7 @@ async function fetchInitial(): Promise<{ nodes: ApiNode[]; edges: ApiEdge[] }> {
 
 async function fetchExpand(nodeId: string): Promise<ApiExpandResponse> {
   const data = await safeFetch<ApiExpandResponse>(
-    `${API_BASE}/expand?node=${encodeURIComponent(nodeId)}`
+    apiUrl(`/expand?node=${encodeURIComponent(nodeId)}`)
   );
   if (
     typeof data !== "object" ||
@@ -80,7 +80,7 @@ async function fetchExpand(nodeId: string): Promise<ApiExpandResponse> {
 
 async function fetchNodeDetail(nodeId: string): Promise<ApiNodeDetail> {
   const data = await safeFetch<ApiNodeDetail>(
-    `${API_BASE}/nodes/${encodeURIComponent(nodeId)}`
+    apiUrl(`/nodes/${encodeURIComponent(nodeId)}`)
   );
   if (typeof data !== "object" || data === null || typeof data.name !== "string") {
     throw new Error(`Unexpected node detail response for "${nodeId}"`);
@@ -90,7 +90,7 @@ async function fetchNodeDetail(nodeId: string): Promise<ApiNodeDetail> {
 
 async function fetchRecordGraph(): Promise<RecordGraphResponse> {
   const data = await safeFetch<RecordGraphResponse>(
-    `${API_BASE}/record-graph?records_per_entity=5`
+    apiUrl("/record-graph?records_per_entity=5")
   );
   return data;
 }

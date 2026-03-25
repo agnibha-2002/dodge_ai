@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { apiUrl } from "./api";
 
 // ─── Plan types ───────────────────────────────────────────────────────────────
 
@@ -141,7 +142,6 @@ interface Message {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const API_BASE = "http://localhost:8000";
 const STORAGE_KEY = "dodge_ai_messages_v1";
 
 // Dark palette — atmospheric navy, not flat black
@@ -583,7 +583,7 @@ export function ChatPanel() {
     setSending(true);
 
     try {
-      const resp = await fetch(`${API_BASE}/query/plan`, {
+      const resp = await fetch(apiUrl("/query/plan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: text }),

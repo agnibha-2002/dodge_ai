@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Search, ChevronLeft, ChevronRight, Loader2, Database } from "lucide-react";
 import type { RecordsResponse } from "./types";
-
-const API_BASE = "http://localhost:8000";
+import { apiUrl } from "./api";
 const PAGE_SIZE = 20;
 
 interface RecordsModalProps {
@@ -41,7 +40,7 @@ export function RecordsModal({ nodeName, recordCount, onClose }: RecordsModalPro
       if (searchQuery) params.set("search", searchQuery);
 
       const resp = await fetch(
-        `${API_BASE}/nodes/${encodeURIComponent(nodeName)}/records?${params}`
+        apiUrl(`/nodes/${encodeURIComponent(nodeName)}/records?${params}`)
       );
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const result: RecordsResponse = await resp.json();

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Table2, Link2, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ApiNodeDetail, RecordsResponse } from "./types";
-
-const API_BASE = "http://localhost:8000";
+import { apiUrl } from "./api";
 const RECORD_FIELDS_MAX = 10;
 
 type InspectorMode = "overview" | "record";
@@ -38,7 +37,7 @@ export function InspectorCard({
     setRecordLoading(true);
     try {
       const resp = await fetch(
-        `${API_BASE}/nodes/${encodeURIComponent(nodeName)}/records?limit=5`
+        apiUrl(`/nodes/${encodeURIComponent(nodeName)}/records?limit=5`)
       );
       if (resp.ok) {
         const data: RecordsResponse = await resp.json();

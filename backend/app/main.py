@@ -82,15 +82,21 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — allow the React UI (default Vite port) and any localhost
+# CORS — allow local dev and configurable production frontends
+default_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+extra_origins_raw = os.getenv("CORS_ORIGINS", "")
+extra_origins = [o.strip() for o in extra_origins_raw.split(",") if o.strip()]
+allow_origins = default_origins + extra_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=allow_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
