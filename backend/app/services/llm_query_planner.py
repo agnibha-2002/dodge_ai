@@ -34,6 +34,14 @@ from app.models.plan import (
 )
 from app.models.query import Confidence
 from app.services.graph_service import GraphService
+from app.services.llm_guardrails import (
+    MAX_FILTERS,
+    downgrade_confidence,
+    is_blocked_question,
+    sanitize_filter_value,
+    sanitize_operator,
+    sanitize_question,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +264,34 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
 
 
-def _validate_plan(raw: dict, valid_entities: set[str]) -> Optional[GraphQueryPlan]:
+def _can_reach(start: Optional[str], target: Optional[str], edges: list[tuple[str, str]]) -> bool:
+    if not start or not target:
+        return False
+    if start == target:
+        return True
+    adj: dict[str, set[str]] = {}
+    for a, b in edges:
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    seen = {start}
+    stack = [start]
+    while stack:
+        cur = stack.pop()
+        for nxt in adj.get(cur, set()):
+            if nxt == target:
+                return True
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return False
+
+
+def _validate_plan(
+    raw: dict,
+    valid_entities: set[str],
+    attributes_per_entity: dict[str, list[str]],
+    relationship_edges: list[tuple[str, str]],
+) -> Optional[GraphQueryPlan]:
     """
     Parse raw JSON into GraphQueryPlan, enforcing schema constraints.
     Returns None if validation fails.
@@ -308,18 +343,26 @@ def _validate_plan(raw: dict, valid_entities: set[str]) -> Optional[GraphQueryPl
                 direction=p.get("direction", "forward"),
             )
 
-        # Filters
+        # Filters (strictly scoped to known fields/operators)
         filters = []
-        for f in raw.get("filters") or []:
+        for f in (raw.get("filters") or [])[:MAX_FILTERS]:
             if isinstance(f, dict) and f.get("field") and f.get("value") is not None:
                 entity = f.get("entity")
                 if entity and entity not in valid_entities:
                     entity = None
+                field = str(f["field"])
+                # Resolve field scope; if no explicit entity, use start_entity.
+                scoped_entity = entity or start_entity
+                if scoped_entity:
+                    allowed_fields = set(attributes_per_entity.get(scoped_entity, [])) | {"id", "pk"}
+                    if field not in allowed_fields:
+                        logger.warning("Dropping out-of-schema filter field '%s' for entity '%s'", field, scoped_entity)
+                        continue
                 filters.append(PlanFilterCondition(
                     entity=entity,
-                    field=str(f["field"]),
-                    operator=str(f.get("operator", "=")),
-                    value=str(f["value"]),
+                    field=field,
+                    operator=sanitize_operator(f.get("operator", "=")),
+                    value=sanitize_filter_value(f["value"]),
                 ))
 
         # Anomaly
@@ -336,6 +379,13 @@ def _validate_plan(raw: dict, valid_entities: set[str]) -> Optional[GraphQueryPl
         confidence = Confidence.HIGH if conf_raw == "HIGH" else (
             Confidence.LOW if conf_raw == "LOW" else Confidence.MEDIUM
         )
+
+        # Enforce relationship reachability for cross-entity plans
+        if plan_type in {"traverse", "path", "anomaly"} and start_entity and target_entity:
+            if not _can_reach(start_entity, target_entity, relationship_edges):
+                logger.warning("Unreachable plan entities: %s -> %s", start_entity, target_entity)
+                target_entity = None
+                confidence = downgrade_confidence(confidence)
 
         return GraphQueryPlan(
             type=plan_type,
@@ -424,13 +474,22 @@ def plan_query(
     Returns:
         A validated GraphQueryPlan — never raises.
     """
+    question = sanitize_question(question)
     key = api_key or os.getenv("HUGGINGFACE_API_KEY", "")
+
+    # Prompt-injection / secret-exfiltration guardrail: never send blocked prompts to LLM.
+    if is_blocked_question(question):
+        logger.warning("Blocked potentially unsafe prompt; using deterministic fallback planner")
+        fallback = _rule_based_fallback(question, svc)
+        fallback.confidence = downgrade_confidence(fallback.confidence)
+        return fallback
     if not key:
         logger.info("No API key — using rule-based fallback planner")
         return _rule_based_fallback(question, svc)
 
     schema = _build_schema_context(svc)
     valid_entities = set(schema["entities"])
+    relationship_edges = [(e.from_node, e.to_node) for e in svc._edges]
 
     user_message = _USER_TEMPLATE.format(
         user_query=question,
@@ -457,7 +516,12 @@ def plan_query(
             logger.warning("LLM returned non-JSON output — falling back")
             return _rule_based_fallback(question, svc)
 
-        plan = _validate_plan(raw_json, valid_entities)
+        plan = _validate_plan(
+            raw_json,
+            valid_entities,
+            schema["attributes_per_entity"],
+            relationship_edges,
+        )
         if plan is None:
             logger.warning("LLM plan failed validation — falling back")
             return _rule_based_fallback(question, svc)

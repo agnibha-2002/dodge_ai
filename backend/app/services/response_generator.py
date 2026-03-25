@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from app.services.hf_client import hf_chat_completion
+from app.services.llm_guardrails import redact_execution_for_llm, sanitize_question
 
 _SYSTEM_PROMPT = """\
 You are an intelligent assistant for a graph-based ERP system.
@@ -100,15 +101,17 @@ def generate_response(
         A natural-language answer string. Never raises — returns a fallback
         string on any error so the pipeline degrades gracefully.
     """
+    user_query = sanitize_question(user_query)
     key = api_key or os.getenv("HUGGINGFACE_API_KEY", "")
     if not key:
         logger.warning("HUGGINGFACE_API_KEY not set — returning deterministic fallback answer")
         return _fallback_answer(execution_result)
 
     try:
+        safe_execution = redact_execution_for_llm(execution_result)
         user_message = _USER_TEMPLATE.format(
             user_query=user_query,
-            result_json=json.dumps(execution_result, indent=2, default=str),
+            result_json=json.dumps(safe_execution, indent=2, default=str),
         )
 
         answer = hf_chat_completion(
