@@ -129,6 +129,16 @@ app.include_router(records.router)
 app.include_router(record_graph.router)
 app.include_router(query.router)
 
+# Mirror routes under /api for serverless/rewrite deployments (e.g. Vercel).
+app.include_router(nodes.router, prefix="/api")
+app.include_router(edges.router, prefix="/api")
+app.include_router(expand.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
+app.include_router(graph.router, prefix="/api")
+app.include_router(records.router, prefix="/api")
+app.include_router(record_graph.router, prefix="/api")
+app.include_router(query.router, prefix="/api")
+
 
 # ─────────────────────────────────────────────
 # Health check
@@ -136,6 +146,11 @@ app.include_router(query.router)
 
 @app.get("/health", tags=["Health"], summary="Health check")
 def health():
+    return {"status": "ok"}
+
+
+@app.get("/api/health", tags=["Health"], summary="Health check (api-prefixed)")
+def api_health():
     return {"status": "ok"}
 
 
