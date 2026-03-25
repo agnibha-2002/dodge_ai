@@ -205,11 +205,6 @@ function humanize(s: string): string {
   return spaced.replace(/\b\w/g, c => c.toUpperCase());
 }
 
-/** "HAS_DELIVERY" → "has delivery" */
-function friendlyRel(s: string): string {
-  return s.replace(/_/g, " ").toLowerCase();
-}
-
 /** Format a number nicely */
 function fmt(n: number): string {
   return Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
