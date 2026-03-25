@@ -1,0 +1,174 @@
+{
+  "node_issues": [
+    {
+      "node": "BillingDocument",
+      "issue": "Node conflates three semantically distinct document types without differentiation. billing_document_headers contains: 80 F2 cancelled invoices, 80 S1 cancellation reversal documents, and only 3 active F2 invoices. billing_document_cancellations (80 records) is an exact duplicate of the 80 cancelled F2 records from billing_document_headers — identical schema, identical data, zero additional information. The normalized_schema merge is correct for deduplication, but the resulting BillingDocument node now contains S1 reversal documents alongside F2 invoices with no semantic differentiation. Any traversal query that does not filter on billingDocumentType AND is_cancelled will mix original invoices, their cancellation reversals, and cancelled originals.",
+      "severity": "HIGH",
+      "suggested_fix": "Add billingDocumentType as a mandatory filter attribute in node definition. For O2C queries, active invoices are: billingDocumentType='F2' AND is_cancelled=false (only 3 records in current dataset). Cancellation reversals are: billingDocumentType='S1'. Consider splitting into two node subtypes: Invoice (F2) and CancellationReversal (S1), or add a computed node property 'document_role': 'INVOICE' | 'REVERSAL' | 'CANCELLED_INVOICE'."
+    },
+    {
+      "node": "BillingDocument",
+      "issue": "Graph node specifies primary_key as 'billing_document_id' but the Payment->BillingDocument edge joins via the alternate key 'accounting_document_id'. The graph definition acknowledges this in the edge notes but the node itself does not expose 'alternate_keys' in the standard node schema format. This creates a hidden dependency: consumers building traversal queries from node metadata alone will use billing_document_id and fail to construct the Payment->BillingDocument join.",
+      "severity": "MEDIUM",
+      "suggested_fix": "Add 'alternate_keys': ['accounting_document_id'] explicitly to the BillingDocument node definition. Flag accounting_document_id as a UNIQUE index field to make the alternate key join path self-documenting."
+    },
+    {
+      "node": "ProductPlant",
+      "issue": "Node is correctly retained as a node (not collapsed to a MANY_TO_MANY edge) because it has 3 non-FK attributes. However, the node's primary_key is defined as ['product_id', 'plant_id'] — these are also its only FK columns. If a graph engine treats nodes with purely FK-composed PKs as junction nodes and auto-converts them, ProductPlant will be incorrectly collapsed to an edge, losing availability_check_type, mrp_type, and profit_center attributes.",
+      "severity": "LOW",
+      "suggested_fix": "Add explicit note in node definition: 'junction_table: false — retained as node due to 3 non-FK attributes'. Consider adding a surrogate key product_plant_id to make the non-FK nature of the PK unambiguous."
+    }
+  ],
+  "edge_issues": [
+    {
+      "edge": "Payment -> JournalEntry (clears)",
+      "issue": "INVALID EDGE: No foreign key exists in normalized_schema from fact_payment to fact_journal_entry. The join condition 'Payment.clearing_document_id = JournalEntry.clearing_document_id' is a LATERAL JOIN on a shared correlation field — both tables simply record the same clearingAccountingDocument value when a payment clears an invoice. This is not a parent-child FK relationship. Furthermore, 20 out of 76 clearing_document_id values have no matching accountingDocument primary key in any table in the dataset (orphan references to external bank/clearing documents outside this schema). The edge direction is also wrong: it is modeled as Payment→JournalEntry, but the correct semantic relationship is JournalEntry→Payment (the journal entry is the child that records which payment cleared it).",
+      "severity": "HIGH",
+      "suggested_fix": "Remove this edge. Replace with a correctly directed edge: JournalEntry→Payment with join condition 'JournalEntry.clearing_document_id = Payment.accounting_document_id' (validated: 100/123 JE records have a clearingDoc matching a Payment accountingDocument). This is the proper FK direction — the JE records the clearing payment's accountingDocument. Mark with cardinality MANY_TO_ONE. The 23/123 JE records with no matching payment represent open (unpaid) AR items."
+    },
+    {
+      "edge": "JournalEntry -> BillingDocument (posted_for) [DUPLICATE]",
+      "issue": "REDUNDANT DUPLICATE EDGE: The graph contains two edges from JournalEntry to BillingDocument — 'posted_for' (via accounting_document_id alternate key) and 'references_invoice' (via billing_document_id PK). Data validation confirms these are 100% redundant: for all 123 JE records, both join paths resolve to the identical BillingDocument (zero mismatches). Two edges to the same parent node pair create ambiguity in graph traversal, double-count in graph algorithms, and force consumers to arbitrarily choose one path.",
+      "severity": "MEDIUM",
+      "suggested_fix": "Remove the 'posted_for' edge (accounting_document_id alternate key path). Retain only 'references_invoice' (billing_document_id PK path) as it uses the canonical PK join. The accounting_document_id join is already documented as the alternate key path on the BillingDocument node and is used by the Payment→BillingDocument edge — maintaining a second JE→BD path via the same key is redundant."
+    },
+    {
+      "edge": "JournalEntry -> BillingDocument (posted_for)",
+      "issue": "ALTERNATE KEY JOIN: The join condition uses BillingDocument.accounting_document_id which is not the table's primary key. While this field is confirmed as UNIQUE (163 billing docs, 163 distinct accounting_document_id values), graph databases and ORM tools typically build indexes and enforce FK constraints on primary keys only. Using an alternate key as a join target may cause index misses, constraint violations on import, or silent failures when data volume increases.",
+      "severity": "MEDIUM",
+      "suggested_fix": "Preferred fix: use the 'references_invoice' edge (PK join) and drop 'posted_for'. If both must be kept, explicitly mark accounting_document_id as a UNIQUE alternate key with its own index definition in the schema, and flag the edge as 'alternate_key_join: true'."
+    },
+    {
+      "edge": "OutboundDeliveryItem -> SalesOrderItem (fulfills)",
+      "issue": "INCORRECT CARDINALITY LABEL: Edge is labeled ONE_TO_ONE. Data currently shows no SO item with more than 1 delivery item, but this is a dataset characteristic, not a structural constraint. SAP allows split deliveries where one sales order item is fulfilled by multiple partial delivery items across different delivery documents. The normalized_schema has no UNIQUE constraint on (sales_order_id, sales_order_item) in fact_outbound_delivery_item. The ONE_TO_ONE label will cause incorrect query construction for datasets with partial deliveries.",
+      "severity": "MEDIUM",
+      "suggested_fix": "Change cardinality to MANY_TO_ONE. One SalesOrderItem can be fulfilled by multiple OutboundDeliveryItems (partial shipments). Label confidence should remain HIGH for schema, but the ONE_TO_ONE is dataset-specific, not schema-enforced."
+    },
+    {
+      "edge": "Payment -> BillingDocument (settles)",
+      "issue": "POTENTIALLY INCORRECT CARDINALITY: Edge is labeled ONE_TO_ONE. Current dataset shows max 1 payment record per billing accounting_document_id. However, 56 of 120 payment records have debit_credit_indicator='C' (credit/reversal). In real O2C operations, partial payments result in multiple payment records against one billing document. The ONE_TO_ONE is dataset-specific and not schema-enforced — there is no UNIQUE constraint on billing_accounting_document_id in fact_payment.",
+      "severity": "LOW",
+      "suggested_fix": "Change cardinality label to MANY_TO_ONE to reflect schema-allowed multiplicity. Add note that current dataset happens to show 1:1 distribution."
+    }
+  ],
+  "missing_relationships": [
+    {
+      "description": "S1 cancellation reversal documents have no edge to the F2 invoices they cancel. Each S1 billing document exists to reverse a specific F2 invoice, but the cancelledBillingDocument field is 100% empty in both billing_document_headers and billing_document_cancellations — this link is absent from the dataset entirely. This breaks the cancellation traceability chain: given an S1 document, there is no graph path to the original F2 invoice it cancelled.",
+      "suggested_edge": "BillingDocument (S1) -> BillingDocument (F2) via 'cancels' relationship",
+      "join_condition": "BillingDocument.cancelledBillingDocument = BillingDocument.billing_document_id",
+      "blocker": "cancelledBillingDocument is 100% empty in source data — this edge cannot be constructed until source data is fixed"
+    },
+    {
+      "description": "JournalEntry→Payment edge is missing from the graph in the correct direction. The existing Payment→JournalEntry edge has the wrong direction and wrong join condition. The correct edge (JournalEntry→Payment via JE.clearing_document_id = Pay.accounting_document_id) is validated by data: 100/123 JE records have a clearing doc matching a Payment accountingDocument.",
+      "suggested_edge": "JournalEntry -> Payment via 'cleared_by_payment'",
+      "join_condition": "JournalEntry.clearing_document_id = Payment.accounting_document_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": "100/123 JE records matched; 23 are open (unpaid) items"
+    },
+    {
+      "description": "No direct edge exists from SalesOrder to OutboundDelivery. The only path is SalesOrder→SalesOrderItem→OutboundDeliveryItem→OutboundDelivery (3 hops). For query patterns like 'find all deliveries for an order', this is inefficient. However, no direct FK exists in schema — correctly absent from graph. Document as a multi-hop path rather than a missing edge.",
+      "suggested_edge": "SalesOrder -> OutboundDelivery (via multi-hop, no direct FK)",
+      "join_condition": "Requires 3-hop join through SalesOrderItem and OutboundDeliveryItem",
+      "note": "No direct FK exists in schema — this is a correctly absent edge, not a missing one"
+    }
+  ],
+  "invalid_relationships": [
+    {
+      "edge": "Payment -> JournalEntry (clears)",
+      "reason": "No foreign key in normalized_schema from fact_payment to fact_journal_entry. The join condition uses clearing_document_id on both sides — this is a lateral correlation join, not a parent-child FK. clearing_document_id is not a primary key in any table: 20/76 clearing document IDs have no matching accountingDocument PK in any graph node (orphan values referencing external bank clearing documents outside this dataset). The edge direction is also inverted: JournalEntry.clearing_document_id = Payment.accountingDocument is the valid relationship, not Payment.clearing_document_id = JournalEntry.clearing_document_id."
+    }
+  ],
+  "cardinality_issues": [
+    {
+      "edge": "OutboundDeliveryItem -> SalesOrderItem (fulfills)",
+      "expected": "MANY_TO_ONE",
+      "found": "ONE_TO_ONE",
+      "evidence": "Current dataset has no SO item with >1 delivery item, but no UNIQUE constraint exists in schema on (sales_order_id, sales_order_item) in fact_outbound_delivery_item. SAP supports split deliveries (partial shipments), making MANY_TO_ONE the schema-correct cardinality."
+    },
+    {
+      "edge": "JournalEntry -> BillingDocument (posted_for)",
+      "expected": "MANY_TO_ONE",
+      "found": "ONE_TO_ONE",
+      "evidence": "Edge is between JournalEntry items and BillingDocument. The PK of fact_journal_entry is composite (accounting_document_id, accounting_document_item) — multiple items per accounting document are possible. While current data shows max 1 JE item per accounting_document_id, the schema allows N items. The correct cardinality for an item-level table joining to a header table is MANY_TO_ONE."
+    },
+    {
+      "edge": "Payment -> BillingDocument (settles)",
+      "expected": "MANY_TO_ONE",
+      "found": "ONE_TO_ONE",
+      "evidence": "No UNIQUE constraint on billing_accounting_document_id in fact_payment. 56/120 payment records are credit reversals — in a real O2C dataset, partial payments and payment reversals would produce multiple payment records per billing document."
+    }
+  ],
+  "edge_case_failures": [
+    {
+      "test_case": "O2C chain traversal without billing type filter",
+      "failure_reason": "The BillingDocument node contains 80 S1 (cancellation reversal) documents, 80 cancelled F2 invoices, and only 3 active F2 invoices. Any graph traversal that does not filter billingDocumentType='F2' AND is_cancelled=false will traverse 163 nodes instead of 3 for active invoices. This causes a 54x over-count of billing records in unfiltered queries.",
+      "impact": "HIGH"
+    },
+    {
+      "test_case": "Payment→JournalEntry traversal via clearing_document_id lateral join",
+      "failure_reason": "20/76 clearing document IDs in the Payment and JournalEntry tables have no matching accountingDocument PK in any graph node. These are external clearing documents (bank entries) outside the schema. Graph traversal via clearing_document_id will silently drop 26% of clearing relationships when joining to node PKs.",
+      "impact": "HIGH"
+    },
+    {
+      "test_case": "SO items with no delivery (unshipped orders)",
+      "failure_reason": "30/167 SO items (18%) have no corresponding OutboundDeliveryItem. The O2C chain breaks at SalesOrderItem→OutboundDeliveryItem for these records. Graph queries traversing the full chain Customer→SO→SOI→ODI→OD→BDI→BD will silently exclude 30 unshipped order items from results.",
+      "impact": "MEDIUM"
+    },
+    {
+      "test_case": "Deliveries with no billing items (unbilled deliveries)",
+      "failure_reason": "3/86 outbound deliveries have no billing document items. These represent shipped-but-not-billed scenarios. Chain traversal from OD→BDI will return 0 results for 3.5% of deliveries, breaking completeness checks.",
+      "impact": "MEDIUM"
+    },
+    {
+      "test_case": "Journal entries with no payment (open AR)",
+      "failure_reason": "3/123 journal entries have no clearing document (clearingAccountingDocument is null). These are open AR items — invoices issued but not yet paid. The Payment→JournalEntry edge (even if direction is corrected) will produce no results for these 3 items. Any query expecting all JEs to link to a payment will silently miss 2.4% of records.",
+      "impact": "LOW"
+    },
+    {
+      "test_case": "Billing docs with no journal entry (incomplete FI posting)",
+      "failure_reason": "40/163 billing docs have no matching journal entry. Breakdown: 16 cancelled F2 invoices, 24 S1 reversal documents. The 24 missing S1 JEs represent a dataset extraction gap — SAP S1 reversal documents generate their own FI postings which are absent from this extract. JournalEntry→BillingDocument traversal will miss 14.7% of billing documents.",
+      "impact": "MEDIUM"
+    },
+    {
+      "test_case": "Duplicate billing items per delivery item (cancellation pattern)",
+      "failure_reason": "121/137 delivery items appear in exactly 2 billing document items each: one cancelled (is_cancelled=true) and one active. Graph traversal from OutboundDeliveryItem→BillingDocumentItem without filtering is_cancelled=false will return 245 billing items instead of 124 active ones, resulting in 97% over-count for the billed portion of delivered items.",
+      "impact": "HIGH"
+    },
+    {
+      "test_case": "Circular relationship detection",
+      "failure_reason": "No circular relationships detected. Graph is a valid DAG.",
+      "impact": "LOW"
+    },
+    {
+      "test_case": "Null FK values in critical path",
+      "failure_reason": "0 null values in JournalEntry.referenceDocument (FK to BillingDocument). 0 null values in Payment.billing_accounting_document_id (FK to BillingDocument). 3/123 JournalEntry.clearing_document_id are null (open AR items — expected business state, not data error). All critical-path FKs are non-null.",
+      "impact": "LOW"
+    },
+    {
+      "test_case": "Schema completeness: all normalized_schema tables represented as graph nodes",
+      "failure_reason": "No missing tables. All 16 normalized_schema tables have corresponding graph nodes. No extra tables in graph without schema backing.",
+      "impact": "LOW"
+    }
+  ],
+  "summary": {
+    "total_issues": 18,
+    "high_severity_issues": 4,
+    "graph_quality": "MODERATE",
+    "validated_facts": {
+      "nodes": 16,
+      "edges_total": 22,
+      "edges_valid": 20,
+      "edges_invalid": 1,
+      "edges_redundant": 1,
+      "zero_unmatched_fks": true,
+      "circular_relationships": false
+    },
+    "critical_actions_required": [
+      "Remove Payment→JournalEntry (clears) edge — invalid lateral join, wrong direction, no FK support. Replace with JournalEntry→Payment via JE.clearing_document_id = Payment.accounting_document_id.",
+      "Remove duplicate JournalEntry→BillingDocument (posted_for) edge — 100% redundant with references_invoice. Retain only the PK-based references_invoice path.",
+      "Fix 3 cardinality labels: OutboundDeliveryItem→SalesOrderItem, JournalEntry→BillingDocument, Payment→BillingDocument — all should be MANY_TO_ONE, not ONE_TO_ONE.",
+      "Add billingDocumentType filter guidance to BillingDocument node — unfiltered traversal produces 54x over-count vs active invoices. Only 3/163 billing docs are active non-cancelled F2 invoices in current dataset.",
+      "Document O2C traversal mandatory filters: (1) BillingDocumentItem: join via is_cancelled=false BillingDocument only; (2) BillingDocument: filter billingDocumentType='F2' for invoices; (3) OutboundDeliveryItem→BillingDocumentItem: active billing link only."
+    ]
+  }
+}

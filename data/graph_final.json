@@ -1,0 +1,850 @@
+{
+  "version": "2.0",
+  "description": "Production-hardened ContextGraph AI graph for SAP Order-to-Cash (O2C). All edges are FK-backed or explicitly typed. Invalid lateral join edges removed. Cardinalities are data-driven. Filters applied at node and edge level to handle document type mixing and cancellation patterns.",
+  "nodes": [
+    {
+      "name": "Customer",
+      "source_table": "dim_customer",
+      "primary_key": "customer_id",
+      "attributes": [
+        "customer_name",
+        "business_partner_category",
+        "business_partner_grouping",
+        "is_blocked",
+        "is_archived",
+        "created_by",
+        "created_at"
+      ],
+      "filters": [],
+      "record_count": 8
+    },
+    {
+      "name": "CustomerAddress",
+      "source_table": "dim_customer_address",
+      "primary_key": "address_id",
+      "attributes": [
+        "customer_id",
+        "city_name",
+        "country",
+        "region",
+        "street_name",
+        "postal_code",
+        "address_timezone",
+        "valid_from",
+        "valid_to"
+      ],
+      "filters": [],
+      "record_count": 8
+    },
+    {
+      "name": "CustomerCompany",
+      "source_table": "dim_customer_company",
+      "primary_key": ["customer_id", "company_code"],
+      "attributes": [
+        "reconciliation_account",
+        "customer_account_group",
+        "deletion_indicator"
+      ],
+      "filters": [],
+      "record_count": 8
+    },
+    {
+      "name": "CustomerSalesArea",
+      "source_table": "dim_customer_sales_area",
+      "primary_key": ["customer_id", "sales_organization", "distribution_channel", "division"],
+      "attributes": [
+        "customer_payment_terms",
+        "currency",
+        "delivery_priority",
+        "incoterms_classification",
+        "incoterms_location",
+        "shipping_condition",
+        "complete_delivery_required"
+      ],
+      "filters": [],
+      "record_count": 28
+    },
+    {
+      "name": "Product",
+      "source_table": "dim_product",
+      "primary_key": "product_id",
+      "attributes": [
+        "product_old_id",
+        "product_type",
+        "product_description",
+        "product_group",
+        "base_unit",
+        "division",
+        "industry_sector",
+        "gross_weight",
+        "net_weight",
+        "weight_unit",
+        "is_deleted"
+      ],
+      "filters": [],
+      "record_count": 69
+    },
+    {
+      "name": "Plant",
+      "source_table": "dim_plant",
+      "primary_key": "plant_id",
+      "attributes": [
+        "plant_name",
+        "valuation_area",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "factory_calendar"
+      ],
+      "filters": [],
+      "record_count": 44
+    },
+    {
+      "name": "ProductPlant",
+      "source_table": "dim_product_plant",
+      "primary_key": ["product_id", "plant_id"],
+      "attributes": [
+        "availability_check_type",
+        "mrp_type",
+        "profit_center"
+      ],
+      "filters": [],
+      "junction_table": false,
+      "note": "Retained as node (not collapsed to MANY_TO_MANY edge) because it carries 3 non-FK business attributes. Composite PK is FK-only but additional attributes prevent junction collapse.",
+      "record_count": 3036
+    },
+    {
+      "name": "SalesOrder",
+      "source_table": "fact_sales_order",
+      "primary_key": "sales_order_id",
+      "attributes": [
+        "sales_order_type",
+        "sales_organization",
+        "distribution_channel",
+        "customer_id",
+        "created_by",
+        "created_at",
+        "total_net_amount",
+        "currency",
+        "overall_delivery_status",
+        "requested_delivery_date",
+        "payment_terms",
+        "incoterms_classification",
+        "incoterms_location"
+      ],
+      "filters": [],
+      "record_count": 100
+    },
+    {
+      "name": "SalesOrderItem",
+      "source_table": "fact_sales_order_item",
+      "primary_key": ["sales_order_id", "sales_order_item"],
+      "attributes": [
+        "item_category",
+        "product_id",
+        "requested_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency",
+        "material_group",
+        "production_plant_id",
+        "storage_location",
+        "rejection_reason"
+      ],
+      "filters": [],
+      "record_count": 167
+    },
+    {
+      "name": "SalesOrderScheduleLine",
+      "source_table": "fact_sales_order_schedule_line",
+      "primary_key": ["sales_order_id", "sales_order_item", "schedule_line"],
+      "attributes": [
+        "confirmed_delivery_date",
+        "confirmed_quantity",
+        "quantity_unit"
+      ],
+      "filters": [],
+      "record_count": 179
+    },
+    {
+      "name": "OutboundDelivery",
+      "source_table": "fact_outbound_delivery",
+      "primary_key": "delivery_id",
+      "attributes": [
+        "shipping_point",
+        "created_at",
+        "goods_movement_status",
+        "picking_status",
+        "actual_goods_movement_at"
+      ],
+      "filters": [],
+      "record_count": 86
+    },
+    {
+      "name": "OutboundDeliveryItem",
+      "source_table": "fact_outbound_delivery_item",
+      "primary_key": ["delivery_id", "delivery_item"],
+      "attributes": [
+        "sales_order_id",
+        "sales_order_item",
+        "actual_delivery_quantity",
+        "quantity_unit",
+        "plant_id",
+        "storage_location",
+        "batch"
+      ],
+      "filters": [],
+      "record_count": 137
+    },
+    {
+      "name": "BillingDocument",
+      "source_table": "fact_billing_document",
+      "primary_key": "billing_document_id",
+      "alternate_keys": ["accounting_document_id"],
+      "attributes": [
+        "billing_document_type",
+        "billing_document_date",
+        "created_at",
+        "customer_id",
+        "total_net_amount",
+        "currency",
+        "company_code",
+        "fiscal_year",
+        "accounting_document_id",
+        "is_cancelled"
+      ],
+      "filters": [],
+      "record_count": 163,
+      "document_type_breakdown": {
+        "F2_active_invoices": {
+          "count": 3,
+          "filter": "billing_document_type = 'F2' AND is_cancelled = false",
+          "description": "Original invoices currently active"
+        },
+        "F2_cancelled_invoices": {
+          "count": 80,
+          "filter": "billing_document_type = 'F2' AND is_cancelled = true",
+          "description": "Original invoices that have been cancelled and reversed by an S1 document"
+        },
+        "S1_cancellation_reversals": {
+          "count": 80,
+          "filter": "billing_document_type = 'S1'",
+          "description": "Cancellation reversal documents that negate a corresponding F2 cancelled invoice"
+        }
+      },
+      "query_guidance": "Always filter on billing_document_type and is_cancelled for meaningful results. Unfiltered traversal mixes 3 semantically distinct document roles. For O2C reporting use: billing_document_type IN ('F2','S1')."
+    },
+    {
+      "name": "BillingDocumentItem",
+      "source_table": "fact_billing_document_item",
+      "primary_key": ["billing_document_id", "billing_document_item"],
+      "attributes": [
+        "delivery_id",
+        "delivery_item",
+        "product_id",
+        "billing_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency"
+      ],
+      "filters": [],
+      "record_count": 245
+    },
+    {
+      "name": "JournalEntry",
+      "source_table": "fact_journal_entry",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "attributes": [
+        "accounting_document_type",
+        "company_code",
+        "fiscal_year",
+        "customer_id",
+        "gl_account",
+        "reference_billing_document_id",
+        "amount",
+        "currency",
+        "posting_date",
+        "clearing_date",
+        "clearing_document_id",
+        "profit_center",
+        "financial_account_type"
+      ],
+      "filters": [],
+      "record_count": 123
+    },
+    {
+      "name": "Payment",
+      "source_table": "fact_payment",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "attributes": [
+        "billing_accounting_document_id",
+        "customer_id",
+        "amount",
+        "debit_credit_indicator",
+        "currency",
+        "clearing_date",
+        "clearing_document_id",
+        "posting_date",
+        "gl_account",
+        "profit_center",
+        "financial_account_type"
+      ],
+      "filters": [],
+      "record_count": 120
+    }
+  ],
+  "edges": [
+    {
+      "from": "CustomerAddress",
+      "to": "Customer",
+      "relationship": "belongs_to",
+      "type": "STRUCTURAL",
+      "join_condition": "CustomerAddress.customer_id = Customer.customer_id",
+      "cardinality": "ONE_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 8,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 1
+      },
+      "schema_note": "Schema allows ONE_TO_MANY (customers can have multiple addresses via address validity periods). Current dataset is 1:1."
+    },
+    {
+      "from": "CustomerCompany",
+      "to": "Customer",
+      "relationship": "assigned_to_company",
+      "type": "STRUCTURAL",
+      "join_condition": "CustomerCompany.customer_id = Customer.customer_id",
+      "cardinality": "ONE_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 8,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 1
+      }
+    },
+    {
+      "from": "CustomerSalesArea",
+      "to": "Customer",
+      "relationship": "configured_for_sales_area",
+      "type": "STRUCTURAL",
+      "join_condition": "CustomerSalesArea.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 28,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 4
+      }
+    },
+    {
+      "from": "ProductPlant",
+      "to": "Product",
+      "relationship": "stocked_as_product",
+      "type": "STRUCTURAL",
+      "join_condition": "ProductPlant.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 3036,
+        "parent_records": 69,
+        "matched": 69,
+        "unmatched": 0,
+        "max_children_per_parent": 44
+      }
+    },
+    {
+      "from": "ProductPlant",
+      "to": "Plant",
+      "relationship": "stocked_in_plant",
+      "type": "STRUCTURAL",
+      "join_condition": "ProductPlant.plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 3036,
+        "parent_records": 44,
+        "matched": 44,
+        "unmatched": 0,
+        "max_children_per_parent": 69
+      }
+    },
+    {
+      "from": "SalesOrder",
+      "to": "Customer",
+      "relationship": "placed_by",
+      "type": "STRUCTURAL",
+      "join_condition": "SalesOrder.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 100,
+        "parent_records": 8,
+        "matched": 100,
+        "unmatched": 0,
+        "max_children_per_parent": 72
+      }
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "SalesOrder",
+      "relationship": "belongs_to_order",
+      "type": "STRUCTURAL",
+      "join_condition": "SalesOrderItem.sales_order_id = SalesOrder.sales_order_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 167,
+        "parent_records": 100,
+        "matched": 100,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      }
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Product",
+      "relationship": "orders_product",
+      "type": "STRUCTURAL",
+      "join_condition": "SalesOrderItem.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 167,
+        "parent_records": 69,
+        "matched": 167,
+        "unmatched": 0,
+        "max_children_per_parent": 11
+      }
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Plant",
+      "relationship": "produced_at",
+      "type": "STRUCTURAL",
+      "join_condition": "SalesOrderItem.production_plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 167,
+        "parent_records": 7,
+        "matched": 167,
+        "unmatched": 0,
+        "max_children_per_parent": 110
+      }
+    },
+    {
+      "from": "SalesOrderScheduleLine",
+      "to": "SalesOrderItem",
+      "relationship": "confirms_delivery_for",
+      "type": "STRUCTURAL",
+      "join_condition": "SalesOrderScheduleLine.sales_order_id = SalesOrderItem.sales_order_id AND SalesOrderScheduleLine.sales_order_item = SalesOrderItem.sales_order_item",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 179,
+        "parent_records": 167,
+        "matched": 167,
+        "unmatched": 0,
+        "max_children_per_parent": 2,
+        "note": "12 SO items have 2 schedule lines representing partial delivery confirmation split across two dates"
+      }
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "SalesOrderItem",
+      "relationship": "fulfills",
+      "type": "STRUCTURAL",
+      "join_condition": "OutboundDeliveryItem.sales_order_id = SalesOrderItem.sales_order_id AND OutboundDeliveryItem.sales_order_item = SalesOrderItem.sales_order_item",
+      "cardinality": "ONE_TO_ONE",
+      "confidence": "HIGH",
+      "optional": true,
+      "completeness": "PARTIAL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 137,
+        "parent_records": 167,
+        "matched": 137,
+        "unmatched": 0,
+        "max_children_per_parent": 1,
+        "completeness_pct": 82,
+        "note": "30/167 SO items have no delivery item yet (unshipped orders). Schema does not enforce UNIQUE on (sales_order_id, sales_order_item) in OutboundDeliveryItem — split deliveries would produce MANY_TO_ONE in practice."
+      }
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "OutboundDelivery",
+      "relationship": "belongs_to_delivery",
+      "type": "STRUCTURAL",
+      "join_condition": "OutboundDeliveryItem.delivery_id = OutboundDelivery.delivery_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 137,
+        "parent_records": 86,
+        "matched": 86,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      }
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "Plant",
+      "relationship": "shipped_from",
+      "type": "STRUCTURAL",
+      "join_condition": "OutboundDeliveryItem.plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 137,
+        "parent_records": 5,
+        "matched": 137,
+        "unmatched": 0,
+        "max_children_per_parent": 110
+      }
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "OutboundDeliveryItem",
+      "relationship": "billed_from_delivery",
+      "type": "FILTERED",
+      "join_condition": "BillingDocumentItem.delivery_id = OutboundDeliveryItem.delivery_id AND BillingDocumentItem.delivery_item = OutboundDeliveryItem.delivery_item",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": true,
+      "completeness": "PARTIAL",
+      "filters": [
+        "JOIN BillingDocument ON BillingDocumentItem.billing_document_id = BillingDocument.billing_document_id WHERE BillingDocument.is_cancelled = false"
+      ],
+      "data_stats": {
+        "child_records_total": 245,
+        "child_records_active": 124,
+        "parent_records": 137,
+        "matched_all": 245,
+        "matched_active_only": 124,
+        "unmatched": 0,
+        "max_children_per_parent_unfiltered": 2,
+        "max_children_per_parent_filtered": 1,
+        "completeness_pct": 96,
+        "note": "3/86 deliveries have no billing items. 121/137 delivery items appear in 2 billing items: one cancelled (S1 reversal) + one active. Filter to active billing documents (is_cancelled=false) gives ONE_TO_ONE; unfiltered gives MANY_TO_ONE. Using MANY_TO_ONE as conservative label."
+      }
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "BillingDocument",
+      "relationship": "belongs_to_billing_doc",
+      "type": "STRUCTURAL",
+      "join_condition": "BillingDocumentItem.billing_document_id = BillingDocument.billing_document_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 245,
+        "parent_records": 163,
+        "matched": 163,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      }
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "Product",
+      "relationship": "charges_for_product",
+      "type": "STRUCTURAL",
+      "join_condition": "BillingDocumentItem.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 245,
+        "parent_records": 69,
+        "matched": 245,
+        "unmatched": 0,
+        "max_children_per_parent": 22
+      }
+    },
+    {
+      "from": "BillingDocument",
+      "to": "Customer",
+      "relationship": "billed_to",
+      "type": "STRUCTURAL",
+      "join_condition": "BillingDocument.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 163,
+        "parent_records": 4,
+        "matched": 163,
+        "unmatched": 0,
+        "max_children_per_parent": 143
+      }
+    },
+    {
+      "from": "JournalEntry",
+      "to": "BillingDocument",
+      "relationship": "references_invoice",
+      "type": "STRUCTURAL",
+      "join_condition": "JournalEntry.reference_billing_document_id = BillingDocument.billing_document_id",
+      "cardinality": "ONE_TO_ONE",
+      "confidence": "HIGH",
+      "optional": true,
+      "completeness": "PARTIAL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 123,
+        "parent_records": 163,
+        "matched": 123,
+        "unmatched": 0,
+        "max_children_per_parent": 1,
+        "completeness_pct": 75,
+        "note": "40/163 billing docs have no journal entry: 16 cancelled F2 invoices and 24 S1 reversal docs are missing from FI extract. Schema allows MANY_TO_ONE (multiple JE items per billing doc); current data is 1:1."
+      }
+    },
+    {
+      "from": "JournalEntry",
+      "to": "Customer",
+      "relationship": "receivable_from",
+      "type": "STRUCTURAL",
+      "join_condition": "JournalEntry.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 123,
+        "parent_records": 8,
+        "matched": 123,
+        "unmatched": 0,
+        "max_children_per_parent": 106
+      }
+    },
+    {
+      "from": "JournalEntry",
+      "to": "Payment",
+      "relationship": "cleared_by_payment",
+      "type": "FILTERED",
+      "join_condition": "JournalEntry.clearing_document_id = Payment.accounting_document_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": true,
+      "completeness": "PARTIAL",
+      "filters": [
+        "JournalEntry.clearing_document_id IS NOT NULL"
+      ],
+      "data_stats": {
+        "je_with_clearing": 120,
+        "je_total": 123,
+        "matched_to_payment": 100,
+        "unmatched": 20,
+        "max_je_per_payment": 2,
+        "completeness_pct": 83,
+        "note": "3/123 JEs have no clearing doc (open AR items — not yet paid). 20/120 clearing docs reference external bank clearing documents not present in this dataset. 100/120 confirmed matches. SAP clearing mechanics: JE.clearing_document_id stores the accounting_document_id of the payment that cleared the open item."
+      },
+      "replaces_invalid_edge": "Payment -> JournalEntry (clears) — that edge was removed: it used a lateral join (both sides shared clearing_document_id field), was in the wrong direction, and had no FK support in normalized_schema."
+    },
+    {
+      "from": "Payment",
+      "to": "BillingDocument",
+      "relationship": "settles",
+      "type": "STRUCTURAL",
+      "join_condition": "Payment.billing_accounting_document_id = BillingDocument.accounting_document_id",
+      "join_key_type": "ALTERNATE_KEY",
+      "cardinality": "ONE_TO_ONE",
+      "confidence": "HIGH",
+      "optional": true,
+      "completeness": "PARTIAL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 120,
+        "parent_records": 163,
+        "matched": 120,
+        "unmatched": 0,
+        "max_children_per_parent": 1,
+        "completeness_pct": 73,
+        "note": "43/163 billing docs not yet paid. Join uses BillingDocument.accounting_document_id (UNIQUE alternate key, not the PK billing_document_id). Schema does not enforce UNIQUE on billing_accounting_document_id in Payment — MANY_TO_ONE possible in datasets with partial payments."
+      }
+    },
+    {
+      "from": "Payment",
+      "to": "Customer",
+      "relationship": "received_from",
+      "type": "STRUCTURAL",
+      "join_condition": "Payment.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "confidence": "HIGH",
+      "optional": false,
+      "completeness": "FULL",
+      "filters": [],
+      "data_stats": {
+        "child_records": 120,
+        "parent_records": 2,
+        "matched": 120,
+        "unmatched": 0,
+        "max_children_per_parent": 106,
+        "note": "Only 2 distinct customers have payments in this dataset (concentrated AR)"
+      }
+    }
+  ],
+  "removed_edges": [
+    {
+      "edge": "Payment -> JournalEntry (clears)",
+      "reason": "INVALID: No foreign key in normalized_schema from fact_payment to fact_journal_entry. Join condition used a lateral correlation field (both tables share the same clearing_document_id value) — not a parent-child FK. Additionally, 20/76 clearing document IDs had no matching PK in any graph node (orphan references to external bank clearing documents outside the schema). Edge direction was also wrong. Replaced by correctly-directed JournalEntry→Payment edge."
+    },
+    {
+      "edge": "JournalEntry -> BillingDocument (posted_for)",
+      "reason": "DUPLICATE: This edge joined via BillingDocument.accounting_document_id (alternate key). A second edge JournalEntry→BillingDocument (references_invoice) joins via BillingDocument.billing_document_id (PK). Data validation confirmed both paths produce 100% identical results for all 123/123 JE records — zero divergence. The PK-based path (references_invoice) is preferred as it uses the canonical primary key join."
+    }
+  ],
+  "derived_relationships": [
+    {
+      "from": "SalesOrder",
+      "to": "OutboundDelivery",
+      "relationship": "has_delivery",
+      "logic": "Multi-hop traversal: SalesOrder → SalesOrderItem → OutboundDeliveryItem → OutboundDelivery. No direct FK exists between these entities. Requires 3-hop join: fact_sales_order.sales_order_id = fact_sales_order_item.sales_order_id → fact_outbound_delivery_item.(sales_order_id, sales_order_item) → fact_outbound_delivery.delivery_id",
+      "confidence": "LOW",
+      "optional": true,
+      "note": "82% completeness — 30/167 SO items have no delivery"
+    },
+    {
+      "from": "SalesOrder",
+      "to": "BillingDocument",
+      "relationship": "invoiced_as",
+      "logic": "Multi-hop traversal: SalesOrder → SalesOrderItem → OutboundDeliveryItem → BillingDocumentItem → BillingDocument. No direct FK. Requires 4-hop join. Apply filter: BillingDocument.billing_document_type='F2' AND BillingDocument.is_cancelled=false for active invoices only.",
+      "confidence": "LOW",
+      "optional": true,
+      "note": "Only 3 active F2 invoices exist in current dataset"
+    },
+    {
+      "from": "Customer",
+      "to": "BillingDocument",
+      "relationship": "invoiced_to",
+      "logic": "Reverse traversal of BillingDocument→Customer (billed_to edge). Direct path exists: Customer.customer_id = BillingDocument.customer_id. No separate FK required — this is the reverse direction of a STRUCTURAL edge. Derived only in the sense that graph tools may not auto-generate reverse edges.",
+      "confidence": "LOW",
+      "note": "Use the existing BillingDocument→Customer (billed_to) edge in reverse. Apply filter: billing_document_type='F2' AND is_cancelled=false for active invoices."
+    }
+  ],
+  "o2c_traversal_path": {
+    "description": "Primary Order-to-Cash graph traversal path with required filters at each step",
+    "steps": [
+      {
+        "step": 1,
+        "from": "Customer",
+        "to": "SalesOrder",
+        "edge": "placed_by (reverse)",
+        "filter": "none"
+      },
+      {
+        "step": 2,
+        "from": "SalesOrder",
+        "to": "SalesOrderItem",
+        "edge": "belongs_to_order (reverse)",
+        "filter": "none"
+      },
+      {
+        "step": 3,
+        "from": "SalesOrderItem",
+        "to": "OutboundDeliveryItem",
+        "edge": "fulfills (reverse)",
+        "filter": "OutboundDeliveryItem must exist (optional relationship — 30 items unshipped)"
+      },
+      {
+        "step": 4,
+        "from": "OutboundDeliveryItem",
+        "to": "OutboundDelivery",
+        "edge": "belongs_to_delivery (reverse)",
+        "filter": "none"
+      },
+      {
+        "step": 5,
+        "from": "OutboundDeliveryItem",
+        "to": "BillingDocumentItem",
+        "edge": "billed_from_delivery (reverse)",
+        "filter": "JOIN BillingDocument WHERE is_cancelled = false — required to exclude duplicate cancelled billing items"
+      },
+      {
+        "step": 6,
+        "from": "BillingDocumentItem",
+        "to": "BillingDocument",
+        "edge": "belongs_to_billing_doc (reverse)",
+        "filter": "billing_document_type = 'F2' AND is_cancelled = false for active invoices"
+      },
+      {
+        "step": 7,
+        "from": "BillingDocument",
+        "to": "JournalEntry",
+        "edge": "references_invoice (reverse)",
+        "filter": "JournalEntry must exist (optional — 40 billing docs missing JE in dataset)"
+      },
+      {
+        "step": 8,
+        "from": "JournalEntry",
+        "to": "Payment",
+        "edge": "cleared_by_payment",
+        "filter": "JournalEntry.clearing_document_id IS NOT NULL — required (3 open AR items)"
+      }
+    ]
+  },
+  "graph_statistics": {
+    "total_nodes": 16,
+    "total_structural_edges": 19,
+    "total_filtered_edges": 2,
+    "total_derived_relationships": 3,
+    "removed_invalid_edges": 1,
+    "removed_duplicate_edges": 1,
+    "edges_with_full_completeness": 13,
+    "edges_with_partial_completeness": 8,
+    "zero_unmatched_fk_records": true,
+    "circular_relationships": false,
+    "graph_integrity": "VALID"
+  }
+}

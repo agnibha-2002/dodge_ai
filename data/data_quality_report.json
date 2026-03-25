@@ -1,0 +1,353 @@
+{
+  "entities": [
+    {
+      "name": "SalesOrder",
+      "source_tables": ["sales_order_headers"],
+      "issues": [
+        {
+          "type": "MISSING",
+          "column": "overallOrdReltdBillgStatus",
+          "description": "100% empty strings across all 100 records. This is the primary flag for whether an order has been billed — its absence makes 'delivered but not billed' queries unreliable without joining to billing_document_items.",
+          "example": "",
+          "severity": "HIGH",
+          "suggested_fix": "Derive and backfill this field by joining sales_order_items to billing_document_items via delivery chain. Alternatively treat empty string as 'Not Billed'."
+        },
+        {
+          "type": "MISSING",
+          "column": "salesGroup, salesOffice, totalCreditCheckStatus, overallSdDocReferenceStatus, headerBillingBlockReason, deliveryBlockReason",
+          "description": "All 6 columns are 100% empty strings across all records. They carry no data and add noise to the schema.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Drop these columns from the normalized schema or mark as nullable with NULL instead of empty string."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "totalNetAmount",
+          "description": "Monetary amount stored as a string type instead of numeric. Requires casting before any arithmetic or aggregation.",
+          "example": "\"17108.25\" (string, not float)",
+          "severity": "HIGH",
+          "suggested_fix": "Cast to DECIMAL(15,2) during ingestion. Apply to all amount fields across all financial entities."
+        }
+      ]
+    },
+    {
+      "name": "SalesOrderItem",
+      "source_tables": ["sales_order_items", "sales_order_schedule_lines"],
+      "issues": [
+        {
+          "type": "INCONSISTENT",
+          "column": "salesOrderItem",
+          "description": "Item numbers use short unpadded format ('10', '20', '30'). OutboundDeliveryItem.referenceSdDocumentItem uses zero-padded 6-digit format ('000010', '000020'). Direct string joins will fail without normalization.",
+          "example": "SalesOrderItem.salesOrderItem='10' vs OutboundDeliveryItem.referenceSdDocumentItem='000010'",
+          "severity": "HIGH",
+          "suggested_fix": "Normalize all item number fields to a consistent format at ingestion. Recommended: LPAD to 6 digits ('000010'), or strip leading zeros on the delivery side. Apply consistently to: salesOrderItem, deliveryDocumentItem, referenceSdDocumentItem, billingDocumentItem."
+        },
+        {
+          "type": "MISSING",
+          "column": "salesDocumentRjcnReason",
+          "description": "82% of sales order item records (137/167) have an empty rejection reason. Only meaningful when items are actually rejected.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Store as NULL instead of empty string. Only populated when salesDocumentRjcnReason is set."
+        },
+        {
+          "type": "MISSING",
+          "column": "itemBillingBlockReason",
+          "description": "100% empty across all 167 records.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Drop from normalized schema or store as NULL."
+        }
+      ]
+    },
+    {
+      "name": "OutboundDelivery",
+      "source_tables": ["outbound_delivery_headers"],
+      "issues": [
+        {
+          "type": "UNNORMALIZED",
+          "column": "creationTime, actualGoodsMovementTime",
+          "description": "Time fields are stored as nested JSON objects {hours, minutes, seconds} instead of ISO 8601 time strings or timestamps. Cannot be stored natively in relational columns without transformation.",
+          "example": "{\"hours\": 6, \"minutes\": 49, \"seconds\": 13}",
+          "severity": "HIGH",
+          "suggested_fix": "Flatten to TIME type at ingestion: combine creationDate + creationTime into a single TIMESTAMP column 'createdAt'. Same for actualGoodsMovementDate + actualGoodsMovementTime."
+        },
+        {
+          "type": "MISSING",
+          "column": "actualGoodsMovementDate",
+          "description": "Null in 83/86 records (96%). Cross-check confirms all null records have overallGoodsMovementStatus='A' (goods movement not yet posted). Logically consistent but means most deliveries are unposted.",
+          "example": "null with overallGoodsMovementStatus='A'",
+          "severity": "MEDIUM",
+          "suggested_fix": "Not a data error — reflects real business state. Ensure query logic treats null actualGoodsMovementDate as 'goods not yet moved' rather than missing data."
+        },
+        {
+          "type": "MISSING",
+          "column": "deliveryBlockReason, headerBillingBlockReason, overallProofOfDeliveryStatus",
+          "description": "100% empty strings across all 86 records.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Drop or store as NULL."
+        }
+      ]
+    },
+    {
+      "name": "OutboundDeliveryItem",
+      "source_tables": ["outbound_delivery_items"],
+      "issues": [
+        {
+          "type": "INCONSISTENT",
+          "column": "deliveryDocumentItem",
+          "description": "Zero-padded 6-digit format ('000010') while SalesOrderItem and BillingDocumentItem use unpadded format ('10'). Inconsistent across all three entities that form the O2C item chain.",
+          "example": "deliveryDocumentItem='000010', billingDocumentItem='10'",
+          "severity": "HIGH",
+          "suggested_fix": "Normalize to consistent format at ingestion. Strip or pad consistently across SalesOrderItem, OutboundDeliveryItem, and BillingDocumentItem."
+        },
+        {
+          "type": "MISSING",
+          "column": "lastChangeDate",
+          "description": "100% null across all 137 delivery item records. No audit trail for item-level changes.",
+          "example": "null",
+          "severity": "MEDIUM",
+          "suggested_fix": "Populate from source system or drop the column if unavailable."
+        },
+        {
+          "type": "MISSING",
+          "column": "itemBillingBlockReason",
+          "description": "100% empty across all 137 records.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Drop or store as NULL."
+        },
+        {
+          "type": "MISSING",
+          "column": "batch",
+          "description": "17% of records (24/137) have empty batch number. Only relevant for batch-managed materials.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Store as NULL when not applicable."
+        }
+      ]
+    },
+    {
+      "name": "BillingDocument",
+      "source_tables": ["billing_document_headers", "billing_document_cancellations"],
+      "issues": [
+        {
+          "type": "INCONSISTENT",
+          "column": "cancelledBillingDocument",
+          "description": "80 billing documents have billingDocumentIsCancelled=true but cancelledBillingDocument is empty string in ALL of them. The field is supposed to reference the cancellation document number but is never populated.",
+          "example": "billingDocument='90504259', billingDocumentIsCancelled=true, cancelledBillingDocument=''",
+          "severity": "HIGH",
+          "suggested_fix": "For cancelled billing documents, populate cancelledBillingDocument by cross-referencing the billing_document_cancellations table. If the field represents the cancellation reversal document, clarify semantics and source from the SAP system."
+        },
+        {
+          "type": "UNNORMALIZED",
+          "column": "billing_document_cancellations (table)",
+          "description": "The billing_document_cancellations table is a redundant duplicate of billing_document_headers filtered to billingDocumentIsCancelled=true. It adds no additional columns or data — cancelledBillingDocument is 100% empty in both tables.",
+          "example": "80/163 billing_document_headers records have billingDocumentIsCancelled=true; billing_document_cancellations has exactly 80 records with identical schema",
+          "severity": "MEDIUM",
+          "suggested_fix": "Merge into billing_document_headers. The cancellation status is already captured by billingDocumentIsCancelled=true. Drop the separate cancellations table."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "creationTime",
+          "description": "Same issue as OutboundDelivery: creationTime stored as nested {hours, minutes, seconds} object.",
+          "example": "{\"hours\": 11, \"minutes\": 31, \"seconds\": 13}",
+          "severity": "HIGH",
+          "suggested_fix": "Flatten creationDate + creationTime into a single TIMESTAMP 'createdAt' column at ingestion."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "totalNetAmount",
+          "description": "Monetary amount stored as string.",
+          "example": "\"216.1\"",
+          "severity": "HIGH",
+          "suggested_fix": "Cast to DECIMAL(15,2) at ingestion."
+        }
+      ]
+    },
+    {
+      "name": "BillingDocumentItem",
+      "source_tables": ["billing_document_items"],
+      "issues": [
+        {
+          "type": "INCONSISTENT",
+          "column": "referenceSdDocumentItem",
+          "description": "References OutboundDeliveryItem.deliveryDocumentItem but uses unpadded format ('10') while delivery items use '000010'. Cross-entity join requires normalization.",
+          "example": "BillingDocumentItem.referenceSdDocumentItem='10' vs OutboundDeliveryItem.deliveryDocumentItem='000010'",
+          "severity": "HIGH",
+          "suggested_fix": "Normalize item number format consistently at ingestion across all entities."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "netAmount",
+          "description": "Monetary amount stored as string.",
+          "example": "\"533.05\"",
+          "severity": "HIGH",
+          "suggested_fix": "Cast to DECIMAL(15,2) at ingestion."
+        }
+      ]
+    },
+    {
+      "name": "Payment",
+      "source_tables": ["payments_accounts_receivable"],
+      "issues": [
+        {
+          "type": "INCONSISTENT",
+          "column": "amountInTransactionCurrency, amountInCompanyCodeCurrency",
+          "description": "56 out of 120 payment records (47%) have negative amounts. These likely represent credit memos or payment reversals, but there is no debit/credit indicator field to distinguish payment types. Cannot determine transaction direction without external context.",
+          "example": "amountInTransactionCurrency='-885' with no type indicator",
+          "severity": "HIGH",
+          "suggested_fix": "Add a derived 'paymentType' column: CREDIT if amount > 0, DEBIT/REVERSAL if amount < 0. Alternatively source the debitCreditCode field from the originating FI document."
+        },
+        {
+          "type": "MISSING",
+          "column": "invoiceReference, invoiceReferenceFiscalYear, salesDocument, salesDocumentItem, assignmentReference, costCenter",
+          "description": "All 6 fields are 100% null across all 120 payment records. Direct document references from payment to invoice/sales order are completely absent. The only link to billing is indirect via accountingDocument.",
+          "example": "invoiceReference=null",
+          "severity": "MEDIUM",
+          "suggested_fix": "The accountingDocument field is the reliable join key to billing_document_headers. Document in schema that invoiceReference/salesDocument are not populated in this dataset and should not be used for joins."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "amountInTransactionCurrency",
+          "description": "Monetary amount stored as string.",
+          "example": "\"897.03\"",
+          "severity": "HIGH",
+          "suggested_fix": "Cast to DECIMAL(15,2) at ingestion."
+        }
+      ]
+    },
+    {
+      "name": "JournalEntry",
+      "source_tables": ["journal_entry_items_accounts_receivable"],
+      "issues": [
+        {
+          "type": "MISSING",
+          "column": "costCenter, assignmentReference",
+          "description": "Both fields are 100% empty across all 123 journal entry records.",
+          "example": "costCenter=''",
+          "severity": "LOW",
+          "suggested_fix": "Drop or store as NULL."
+        },
+        {
+          "type": "INCONSISTENT",
+          "column": "amountInTransactionCurrency",
+          "description": "Monetary amount stored as string.",
+          "example": "\"897.03\"",
+          "severity": "HIGH",
+          "suggested_fix": "Cast to DECIMAL(15,2) at ingestion."
+        }
+      ]
+    },
+    {
+      "name": "Customer",
+      "source_tables": ["business_partners", "business_partner_addresses", "customer_company_assignments", "customer_sales_area_assignments"],
+      "issues": [
+        {
+          "type": "UNNORMALIZED",
+          "column": "businessPartner, customer",
+          "description": "businessPartner and customer fields are identical in every record (0 mismatches across all 8 records). One field is entirely redundant.",
+          "example": "businessPartner='310000108', customer='310000108'",
+          "severity": "LOW",
+          "suggested_fix": "Use 'businessPartner' as the canonical primary key. Drop the 'customer' field from the merged entity."
+        },
+        {
+          "type": "UNNORMALIZED",
+          "column": "organizationBpName1, businessPartnerFullName, businessPartnerName",
+          "description": "Three fields store the same company name. All three are identical for organization-type partners.",
+          "example": "businessPartnerName='Cardenas, Parker and Avila', organizationBpName1='Cardenas, Parker and Avila', businessPartnerFullName='Cardenas, Parker and Avila'",
+          "severity": "LOW",
+          "suggested_fix": "Retain only 'businessPartnerName' as the canonical name field."
+        },
+        {
+          "type": "MISSING",
+          "column": "cityName, streetName, postalCode",
+          "description": "6/8 records (75%) missing cityName and streetName; 5/8 (62%) missing postalCode. More than half the customers have incomplete address data.",
+          "example": "cityName=''",
+          "severity": "HIGH",
+          "suggested_fix": "Source complete address data from SAP BP master or flag records with incomplete addresses. These fields are critical for customer identification."
+        },
+        {
+          "type": "MISSING",
+          "column": "paymentTerms (customer_company_assignments)",
+          "description": "6/8 customer company assignments have empty paymentTerms. Payment terms exist on the sales area assignment (customerPaymentTerms) and on the sales order header, but not on the company code assignment.",
+          "example": "paymentTerms=''",
+          "severity": "MEDIUM",
+          "suggested_fix": "Use customerPaymentTerms from customer_sales_area_assignments or sales_order_headers.customerPaymentTerms as the reliable payment terms source."
+        },
+        {
+          "type": "MISSING",
+          "column": "incotermsClassification, incotermsLocation1, shippingCondition (customer_sales_area_assignments)",
+          "description": "17-21% of sales area assignment records missing logistics configuration fields.",
+          "example": "incotermsClassification=''",
+          "severity": "MEDIUM",
+          "suggested_fix": "Store as NULL. Accept that some sales areas have no default incoterms (overridden at order level)."
+        }
+      ]
+    },
+    {
+      "name": "Product",
+      "source_tables": ["products", "product_descriptions"],
+      "issues": [
+        {
+          "type": "MISSING",
+          "column": "crossPlantStatus, crossPlantStatusValidityDate",
+          "description": "Both fields are 100% null/empty across all 69 product records.",
+          "example": "crossPlantStatus=''",
+          "severity": "LOW",
+          "suggested_fix": "Drop from normalized schema."
+        },
+        {
+          "type": "UNNORMALIZED",
+          "column": "productDescription (product_descriptions)",
+          "description": "product_descriptions is a separate table with a language key, but only English ('EN') exists in the dataset (69/69 records). The language dimension adds no value for this dataset.",
+          "example": "language='EN' for all records",
+          "severity": "LOW",
+          "suggested_fix": "Flatten productDescription directly into the Product entity during ingestion. No multilingual support needed for current dataset."
+        }
+      ]
+    },
+    {
+      "name": "Plant",
+      "source_tables": ["plants"],
+      "issues": [
+        {
+          "type": "MISSING",
+          "column": "defaultPurchasingOrganization, plantCategory",
+          "description": "Both fields are 100% empty across all 44 plants.",
+          "example": "",
+          "severity": "LOW",
+          "suggested_fix": "Drop from normalized schema."
+        }
+      ]
+    },
+    {
+      "name": "ProductPlant",
+      "source_tables": ["product_plants"],
+      "issues": [
+        {
+          "type": "MISSING",
+          "column": "countryOfOrigin, regionOfOrigin, productionInvtryManagedLoc, fiscalYearVariant",
+          "description": "All 4 fields are 100% empty across all 3,036 records. The table is dominated by empty fields — only 5 out of 9 columns carry any data.",
+          "example": "countryOfOrigin=''",
+          "severity": "MEDIUM",
+          "suggested_fix": "Drop the 4 unpopulated columns from the normalized schema. Retain only: product, plant, availabilityCheckType, mrpType, profitCenter."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_issues": 36,
+    "high_severity_issues": 14,
+    "overall_data_quality": "MODERATE",
+    "critical_findings": [
+      "All monetary amounts stored as strings — must cast to DECIMAL at ingestion",
+      "Item number format inconsistency (SO: '10' vs Delivery: '000010') breaks cross-entity joins without normalization",
+      "Time fields stored as nested JSON objects — must flatten to TIMESTAMP at ingestion",
+      "46.7% of payment records have negative amounts with no debit/credit indicator",
+      "cancelledBillingDocument field is 100% empty despite billingDocumentIsCancelled=true on 80 records",
+      "75% of customer addresses missing cityName and streetName"
+    ]
+  }
+}

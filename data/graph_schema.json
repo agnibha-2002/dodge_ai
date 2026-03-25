@@ -1,0 +1,327 @@
+{
+  "entities": [
+    {
+      "name": "Customer",
+      "source_tables": [
+        "business_partners",
+        "business_partner_addresses",
+        "customer_company_assignments",
+        "customer_sales_area_assignments"
+      ],
+      "primary_key": "businessPartner",
+      "attributes": [
+        "businessPartnerFullName",
+        "businessPartnerCategory",
+        "businessPartnerIsBlocked",
+        "cityName",
+        "country",
+        "region",
+        "streetName",
+        "postalCode",
+        "paymentTerms",
+        "reconciliationAccount",
+        "salesOrganization",
+        "distributionChannel",
+        "customerPaymentTerms",
+        "incotermsClassification",
+        "currency"
+      ]
+    },
+    {
+      "name": "SalesOrder",
+      "source_tables": ["sales_order_headers"],
+      "primary_key": "salesOrder",
+      "attributes": [
+        "salesOrderType",
+        "salesOrganization",
+        "distributionChannel",
+        "soldToParty",
+        "creationDate",
+        "totalNetAmount",
+        "transactionCurrency",
+        "overallDeliveryStatus",
+        "overallOrdReltdBillgStatus",
+        "requestedDeliveryDate",
+        "customerPaymentTerms",
+        "headerBillingBlockReason",
+        "deliveryBlockReason"
+      ]
+    },
+    {
+      "name": "SalesOrderItem",
+      "source_tables": ["sales_order_items", "sales_order_schedule_lines"],
+      "primary_key": "salesOrder+salesOrderItem",
+      "attributes": [
+        "salesOrder",
+        "salesOrderItem",
+        "salesOrderItemCategory",
+        "material",
+        "requestedQuantity",
+        "requestedQuantityUnit",
+        "netAmount",
+        "transactionCurrency",
+        "materialGroup",
+        "productionPlant",
+        "storageLocation",
+        "salesDocumentRjcnReason",
+        "itemBillingBlockReason",
+        "confirmedDeliveryDate",
+        "confdOrderQtyByMatlAvailCheck"
+      ]
+    },
+    {
+      "name": "OutboundDelivery",
+      "source_tables": ["outbound_delivery_headers"],
+      "primary_key": "deliveryDocument",
+      "attributes": [
+        "creationDate",
+        "shippingPoint",
+        "overallGoodsMovementStatus",
+        "overallPickingStatus",
+        "overallProofOfDeliveryStatus",
+        "actualGoodsMovementDate",
+        "deliveryBlockReason",
+        "headerBillingBlockReason"
+      ]
+    },
+    {
+      "name": "OutboundDeliveryItem",
+      "source_tables": ["outbound_delivery_items"],
+      "primary_key": "deliveryDocument+deliveryDocumentItem",
+      "attributes": [
+        "deliveryDocument",
+        "deliveryDocumentItem",
+        "actualDeliveryQuantity",
+        "deliveryQuantityUnit",
+        "batch",
+        "plant",
+        "storageLocation",
+        "referenceSdDocument",
+        "referenceSdDocumentItem",
+        "itemBillingBlockReason"
+      ]
+    },
+    {
+      "name": "BillingDocument",
+      "source_tables": ["billing_document_headers", "billing_document_cancellations"],
+      "primary_key": "billingDocument",
+      "attributes": [
+        "billingDocumentType",
+        "billingDocumentDate",
+        "creationDate",
+        "soldToParty",
+        "totalNetAmount",
+        "transactionCurrency",
+        "companyCode",
+        "fiscalYear",
+        "accountingDocument",
+        "billingDocumentIsCancelled",
+        "cancelledBillingDocument"
+      ]
+    },
+    {
+      "name": "BillingDocumentItem",
+      "source_tables": ["billing_document_items"],
+      "primary_key": "billingDocument+billingDocumentItem",
+      "attributes": [
+        "billingDocument",
+        "billingDocumentItem",
+        "material",
+        "billingQuantity",
+        "billingQuantityUnit",
+        "netAmount",
+        "transactionCurrency",
+        "referenceSdDocument",
+        "referenceSdDocumentItem"
+      ]
+    },
+    {
+      "name": "JournalEntry",
+      "source_tables": ["journal_entry_items_accounts_receivable"],
+      "primary_key": "accountingDocument+accountingDocumentItem",
+      "attributes": [
+        "accountingDocument",
+        "accountingDocumentItem",
+        "accountingDocumentType",
+        "glAccount",
+        "referenceDocument",
+        "companyCode",
+        "fiscalYear",
+        "customer",
+        "amountInTransactionCurrency",
+        "transactionCurrency",
+        "postingDate",
+        "clearingDate",
+        "clearingAccountingDocument",
+        "clearingDocFiscalYear",
+        "profitCenter",
+        "financialAccountType"
+      ]
+    },
+    {
+      "name": "Payment",
+      "source_tables": ["payments_accounts_receivable"],
+      "primary_key": "accountingDocument+accountingDocumentItem",
+      "attributes": [
+        "accountingDocument",
+        "accountingDocumentItem",
+        "companyCode",
+        "fiscalYear",
+        "customer",
+        "clearingDate",
+        "clearingAccountingDocument",
+        "clearingDocFiscalYear",
+        "amountInTransactionCurrency",
+        "transactionCurrency",
+        "amountInCompanyCodeCurrency",
+        "companyCodeCurrency",
+        "postingDate",
+        "glAccount",
+        "profitCenter",
+        "financialAccountType"
+      ]
+    },
+    {
+      "name": "Product",
+      "source_tables": ["products", "product_descriptions"],
+      "primary_key": "product",
+      "attributes": [
+        "productType",
+        "productDescription",
+        "productOldId",
+        "grossWeight",
+        "netWeight",
+        "weightUnit",
+        "productGroup",
+        "baseUnit",
+        "division",
+        "industrySector",
+        "isMarkedForDeletion"
+      ]
+    },
+    {
+      "name": "Plant",
+      "source_tables": ["plants"],
+      "primary_key": "plant",
+      "attributes": [
+        "plantName",
+        "valuationArea",
+        "salesOrganization",
+        "distributionChannel",
+        "division",
+        "factoryCalendar",
+        "language",
+        "addressId"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Customer",
+      "to": "SalesOrder",
+      "type": "placed",
+      "join_condition": "Customer.businessPartner = SalesOrder.soldToParty",
+      "cardinality": "one-to-many"
+    },
+    {
+      "from": "SalesOrder",
+      "to": "SalesOrderItem",
+      "type": "contains",
+      "join_condition": "SalesOrder.salesOrder = SalesOrderItem.salesOrder",
+      "cardinality": "one-to-many"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Product",
+      "type": "orders",
+      "join_condition": "SalesOrderItem.material = Product.product",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "OutboundDeliveryItem",
+      "type": "fulfilled_by",
+      "join_condition": "SalesOrderItem.salesOrder = OutboundDeliveryItem.referenceSdDocument AND SalesOrderItem.salesOrderItem = OutboundDeliveryItem.referenceSdDocumentItem",
+      "cardinality": "one-to-one"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "OutboundDelivery",
+      "type": "belongs_to",
+      "join_condition": "OutboundDeliveryItem.deliveryDocument = OutboundDelivery.deliveryDocument",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "BillingDocumentItem",
+      "type": "billed_as",
+      "join_condition": "OutboundDeliveryItem.deliveryDocument = BillingDocumentItem.referenceSdDocument AND OutboundDeliveryItem.deliveryDocumentItem = BillingDocumentItem.referenceSdDocumentItem",
+      "cardinality": "one-to-one"
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "BillingDocument",
+      "type": "belongs_to",
+      "join_condition": "BillingDocumentItem.billingDocument = BillingDocument.billingDocument",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "Product",
+      "type": "charges_for",
+      "join_condition": "BillingDocumentItem.material = Product.product",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "BillingDocument",
+      "to": "Customer",
+      "type": "billed_to",
+      "join_condition": "BillingDocument.soldToParty = Customer.businessPartner",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "BillingDocument",
+      "to": "JournalEntry",
+      "type": "posted_as",
+      "join_condition": "BillingDocument.accountingDocument = JournalEntry.accountingDocument",
+      "cardinality": "one-to-many",
+      "note": "Also verifiable via JournalEntry.referenceDocument = BillingDocument.billingDocument"
+    },
+    {
+      "from": "JournalEntry",
+      "to": "Payment",
+      "type": "cleared_by",
+      "join_condition": "JournalEntry.clearingAccountingDocument = Payment.clearingAccountingDocument",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "Payment",
+      "to": "Customer",
+      "type": "paid_by",
+      "join_condition": "Payment.customer = Customer.businessPartner",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "Plant",
+      "type": "shipped_from",
+      "join_condition": "OutboundDeliveryItem.plant = Plant.plant",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Plant",
+      "type": "produced_at",
+      "join_condition": "SalesOrderItem.productionPlant = Plant.plant",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "Product",
+      "to": "Plant",
+      "type": "stocked_at",
+      "join_condition": "product_plants.product = Product.product AND product_plants.plant = Plant.plant",
+      "cardinality": "many-to-many",
+      "via_table": "product_plants"
+    }
+  ]
+}

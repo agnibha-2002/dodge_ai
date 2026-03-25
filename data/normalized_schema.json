@@ -1,0 +1,893 @@
+{
+  "normalized_schema": [
+    {
+      "table_name": "dim_customer",
+      "primary_key": "customer_id",
+      "columns": [
+        "customer_id",
+        "customer_name",
+        "business_partner_category",
+        "business_partner_grouping",
+        "is_blocked",
+        "is_archived",
+        "created_by",
+        "created_at"
+      ],
+      "column_types": {
+        "customer_id": "VARCHAR(20)",
+        "customer_name": "VARCHAR(255)",
+        "business_partner_category": "CHAR(1)",
+        "business_partner_grouping": "VARCHAR(10)",
+        "is_blocked": "BOOLEAN",
+        "is_archived": "BOOLEAN",
+        "created_by": "VARCHAR(20)",
+        "created_at": "TIMESTAMP"
+      },
+      "foreign_keys": [],
+      "notes": "Canonical customer entity. customer_id = businessPartner (= customer, which was always identical — duplicate field dropped). businessPartnerName retained as customer_name; organizationBpName1 and businessPartnerFullName dropped as transitive duplicates. formOfAddress always '0003' — dropped as constant. creationDate + creationTime{hours,minutes,seconds} flattened to single created_at TIMESTAMP."
+    },
+    {
+      "table_name": "dim_customer_address",
+      "primary_key": "address_id",
+      "columns": [
+        "address_id",
+        "customer_id",
+        "city_name",
+        "country",
+        "region",
+        "street_name",
+        "postal_code",
+        "address_timezone",
+        "valid_from",
+        "valid_to",
+        "address_uuid"
+      ],
+      "column_types": {
+        "address_id": "VARCHAR(20)",
+        "customer_id": "VARCHAR(20)",
+        "city_name": "VARCHAR(100)",
+        "country": "CHAR(2)",
+        "region": "VARCHAR(10)",
+        "street_name": "VARCHAR(255)",
+        "postal_code": "VARCHAR(20)",
+        "address_timezone": "VARCHAR(20)",
+        "valid_from": "DATE",
+        "valid_to": "DATE",
+        "address_uuid": "UUID"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        }
+      ],
+      "notes": "All PO Box fields (poBox, poBoxDeviatingCityName, poBoxDeviatingCountry, poBoxDeviatingRegion, poBoxLobbyName, poBoxPostalCode) dropped — 100% empty. taxJurisdiction and transportZone dropped — 100% empty. city_name, street_name, postal_code are nullable (75%/75%/62% missing in source data — data quality issue, not schema issue)."
+    },
+    {
+      "table_name": "dim_customer_company",
+      "primary_key": ["customer_id", "company_code"],
+      "columns": [
+        "customer_id",
+        "company_code",
+        "reconciliation_account",
+        "customer_account_group",
+        "deletion_indicator"
+      ],
+      "column_types": {
+        "customer_id": "VARCHAR(20)",
+        "company_code": "VARCHAR(10)",
+        "reconciliation_account": "VARCHAR(20)",
+        "customer_account_group": "VARCHAR(10)",
+        "deletion_indicator": "BOOLEAN"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        }
+      ],
+      "notes": "All accounting clerk contact fields (accountingClerk, accountingClerkFaxNumber, accountingClerkInternetAddress, accountingClerkPhoneNumber, alternativePayerAccount, paymentBlockingReason, paymentMethodsList) dropped — 100% empty. paymentTerms dropped (75% empty; reliable payment terms sourced from dim_customer_sales_area.customer_payment_terms)."
+    },
+    {
+      "table_name": "dim_customer_sales_area",
+      "primary_key": ["customer_id", "sales_organization", "distribution_channel", "division"],
+      "columns": [
+        "customer_id",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "customer_payment_terms",
+        "currency",
+        "delivery_priority",
+        "incoterms_classification",
+        "incoterms_location",
+        "shipping_condition",
+        "complete_delivery_required"
+      ],
+      "column_types": {
+        "customer_id": "VARCHAR(20)",
+        "sales_organization": "VARCHAR(10)",
+        "distribution_channel": "VARCHAR(2)",
+        "division": "VARCHAR(2)",
+        "customer_payment_terms": "VARCHAR(10)",
+        "currency": "CHAR(3)",
+        "delivery_priority": "CHAR(1)",
+        "incoterms_classification": "VARCHAR(10)",
+        "incoterms_location": "VARCHAR(100)",
+        "shipping_condition": "VARCHAR(2)",
+        "complete_delivery_required": "BOOLEAN"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        }
+      ],
+      "notes": "billingIsBlockedForCustomer, creditControlArea, salesGroup, salesOffice, supplyingPlant, salesDistrict dropped — 100% empty. exchangeRateType dropped — 93% empty and not required for O2C queries. Nullable: incoterms_classification, incoterms_location (17% missing), shipping_condition (21% missing)."
+    },
+    {
+      "table_name": "dim_product",
+      "primary_key": "product_id",
+      "columns": [
+        "product_id",
+        "product_old_id",
+        "product_type",
+        "product_description",
+        "product_group",
+        "base_unit",
+        "division",
+        "industry_sector",
+        "gross_weight",
+        "net_weight",
+        "weight_unit",
+        "is_deleted",
+        "created_by",
+        "created_at",
+        "last_changed_at"
+      ],
+      "column_types": {
+        "product_id": "VARCHAR(30)",
+        "product_old_id": "VARCHAR(30)",
+        "product_type": "VARCHAR(10)",
+        "product_description": "VARCHAR(255)",
+        "product_group": "VARCHAR(20)",
+        "base_unit": "VARCHAR(5)",
+        "division": "VARCHAR(2)",
+        "industry_sector": "CHAR(1)",
+        "gross_weight": "DECIMAL(10,3)",
+        "net_weight": "DECIMAL(10,3)",
+        "weight_unit": "VARCHAR(3)",
+        "is_deleted": "BOOLEAN",
+        "created_by": "VARCHAR(20)",
+        "created_at": "DATE",
+        "last_changed_at": "TIMESTAMP"
+      },
+      "foreign_keys": [],
+      "notes": "product_descriptions merged into products. productDescription from product_descriptions (language='EN' for all 69/69 records — language dimension adds no value). crossPlantStatus and crossPlantStatusValidityDate dropped — 100% empty."
+    },
+    {
+      "table_name": "dim_plant",
+      "primary_key": "plant_id",
+      "columns": [
+        "plant_id",
+        "plant_name",
+        "valuation_area",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "factory_calendar",
+        "language"
+      ],
+      "column_types": {
+        "plant_id": "VARCHAR(10)",
+        "plant_name": "VARCHAR(100)",
+        "valuation_area": "VARCHAR(10)",
+        "sales_organization": "VARCHAR(10)",
+        "distribution_channel": "VARCHAR(2)",
+        "division": "VARCHAR(2)",
+        "factory_calendar": "VARCHAR(5)",
+        "language": "CHAR(2)"
+      },
+      "foreign_keys": [],
+      "notes": "defaultPurchasingOrganization and plantCategory dropped — 100% empty. plantCustomer and plantSupplier dropped — same value as plant_id (self-referential constant). addressId dropped — no dim_plant_address table in source data."
+    },
+    {
+      "table_name": "dim_product_plant",
+      "primary_key": ["product_id", "plant_id"],
+      "columns": [
+        "product_id",
+        "plant_id",
+        "availability_check_type",
+        "mrp_type",
+        "profit_center"
+      ],
+      "column_types": {
+        "product_id": "VARCHAR(30)",
+        "plant_id": "VARCHAR(10)",
+        "availability_check_type": "VARCHAR(5)",
+        "mrp_type": "VARCHAR(5)",
+        "profit_center": "VARCHAR(20)"
+      },
+      "foreign_keys": [
+        {
+          "column": "product_id",
+          "references": "dim_product.product_id"
+        },
+        {
+          "column": "plant_id",
+          "references": "dim_plant.plant_id"
+        }
+      ],
+      "notes": "countryOfOrigin, regionOfOrigin, productionInvtryManagedLoc, fiscalYearVariant dropped — 100% empty across all 3,036 records. Remaining 5 columns all have 100% data coverage."
+    },
+    {
+      "table_name": "fact_sales_order",
+      "primary_key": "sales_order_id",
+      "columns": [
+        "sales_order_id",
+        "sales_order_type",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "customer_id",
+        "created_by",
+        "created_at",
+        "last_changed_at",
+        "total_net_amount",
+        "currency",
+        "overall_delivery_status",
+        "pricing_date",
+        "requested_delivery_date",
+        "payment_terms",
+        "incoterms_classification",
+        "incoterms_location"
+      ],
+      "column_types": {
+        "sales_order_id": "VARCHAR(20)",
+        "sales_order_type": "VARCHAR(5)",
+        "sales_organization": "VARCHAR(10)",
+        "distribution_channel": "VARCHAR(2)",
+        "division": "VARCHAR(2)",
+        "customer_id": "VARCHAR(20)",
+        "created_by": "VARCHAR(20)",
+        "created_at": "DATE",
+        "last_changed_at": "TIMESTAMP",
+        "total_net_amount": "DECIMAL(15,2)",
+        "currency": "CHAR(3)",
+        "overall_delivery_status": "CHAR(1)",
+        "pricing_date": "DATE",
+        "requested_delivery_date": "DATE",
+        "payment_terms": "VARCHAR(10)",
+        "incoterms_classification": "VARCHAR(10)",
+        "incoterms_location": "VARCHAR(100)"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        }
+      ],
+      "notes": "Dropped: salesGroup, salesOffice, overallOrdReltdBillgStatus, overallSdDocReferenceStatus, headerBillingBlockReason, deliveryBlockReason, totalCreditCheckStatus — all 100% empty. total_net_amount cast from STRING to DECIMAL(15,2). overall_billing_status must be derived at query time by joining through delivery → billing chain. soldToParty renamed to customer_id."
+    },
+    {
+      "table_name": "fact_sales_order_item",
+      "primary_key": ["sales_order_id", "sales_order_item"],
+      "columns": [
+        "sales_order_id",
+        "sales_order_item",
+        "item_category",
+        "product_id",
+        "requested_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency",
+        "material_group",
+        "production_plant_id",
+        "storage_location",
+        "rejection_reason"
+      ],
+      "column_types": {
+        "sales_order_id": "VARCHAR(20)",
+        "sales_order_item": "CHAR(6)",
+        "item_category": "VARCHAR(5)",
+        "product_id": "VARCHAR(30)",
+        "requested_quantity": "DECIMAL(13,3)",
+        "quantity_unit": "VARCHAR(5)",
+        "net_amount": "DECIMAL(15,2)",
+        "currency": "CHAR(3)",
+        "material_group": "VARCHAR(20)",
+        "production_plant_id": "VARCHAR(10)",
+        "storage_location": "VARCHAR(10)",
+        "rejection_reason": "VARCHAR(5)"
+      },
+      "foreign_keys": [
+        {
+          "column": "sales_order_id",
+          "references": "fact_sales_order.sales_order_id"
+        },
+        {
+          "column": "product_id",
+          "references": "dim_product.product_id"
+        },
+        {
+          "column": "production_plant_id",
+          "references": "dim_plant.plant_id"
+        }
+      ],
+      "notes": "material renamed to product_id. sales_order_item normalized to CHAR(6) zero-padded format (e.g. '10' -> '000010'). itemBillingBlockReason dropped — 100% empty. rejection_reason nullable (82% empty — only set when item is rejected). net_amount cast from STRING to DECIMAL(15,2)."
+    },
+    {
+      "table_name": "fact_sales_order_schedule_line",
+      "primary_key": ["sales_order_id", "sales_order_item", "schedule_line"],
+      "columns": [
+        "sales_order_id",
+        "sales_order_item",
+        "schedule_line",
+        "confirmed_delivery_date",
+        "confirmed_quantity",
+        "quantity_unit"
+      ],
+      "column_types": {
+        "sales_order_id": "VARCHAR(20)",
+        "sales_order_item": "CHAR(6)",
+        "schedule_line": "CHAR(4)",
+        "confirmed_delivery_date": "DATE",
+        "confirmed_quantity": "DECIMAL(13,3)",
+        "quantity_unit": "VARCHAR(5)"
+      },
+      "foreign_keys": [
+        {
+          "column": ["sales_order_id", "sales_order_item"],
+          "references": "fact_sales_order_item.(sales_order_id, sales_order_item)"
+        }
+      ],
+      "notes": "Kept as separate table — 12 SO items have 2 schedule lines with different confirmed dates and split quantities (partial confirmation pattern). Merging would lose this data. confirmed_delivery_date is nullable (some lines have confirmedDeliveryDate=null with confirmedQty=0, representing unconfirmed portion). sales_order_item normalized to CHAR(6)."
+    },
+    {
+      "table_name": "fact_outbound_delivery",
+      "primary_key": "delivery_id",
+      "columns": [
+        "delivery_id",
+        "shipping_point",
+        "created_at",
+        "goods_movement_status",
+        "picking_status",
+        "actual_goods_movement_at"
+      ],
+      "column_types": {
+        "delivery_id": "VARCHAR(20)",
+        "shipping_point": "VARCHAR(10)",
+        "created_at": "TIMESTAMP",
+        "goods_movement_status": "CHAR(1)",
+        "picking_status": "CHAR(1)",
+        "actual_goods_movement_at": "TIMESTAMP"
+      },
+      "foreign_keys": [],
+      "notes": "1NF fix: creationDate (DATE) + creationTime {hours,minutes,seconds} flattened to single created_at TIMESTAMP. actualGoodsMovementDate + actualGoodsMovementTime flattened to actual_goods_movement_at TIMESTAMP (nullable — null when goods_movement_status='A', meaning not yet posted). overallProofOfDeliveryStatus dropped — 100% empty. deliveryBlockReason and headerBillingBlockReason dropped — 100% empty."
+    },
+    {
+      "table_name": "fact_outbound_delivery_item",
+      "primary_key": ["delivery_id", "delivery_item"],
+      "columns": [
+        "delivery_id",
+        "delivery_item",
+        "sales_order_id",
+        "sales_order_item",
+        "actual_delivery_quantity",
+        "quantity_unit",
+        "plant_id",
+        "storage_location",
+        "batch"
+      ],
+      "column_types": {
+        "delivery_id": "VARCHAR(20)",
+        "delivery_item": "CHAR(6)",
+        "sales_order_id": "VARCHAR(20)",
+        "sales_order_item": "CHAR(6)",
+        "actual_delivery_quantity": "DECIMAL(13,3)",
+        "quantity_unit": "VARCHAR(5)",
+        "plant_id": "VARCHAR(10)",
+        "storage_location": "VARCHAR(10)",
+        "batch": "VARCHAR(20)"
+      },
+      "foreign_keys": [
+        {
+          "column": "delivery_id",
+          "references": "fact_outbound_delivery.delivery_id"
+        },
+        {
+          "column": ["sales_order_id", "sales_order_item"],
+          "references": "fact_sales_order_item.(sales_order_id, sales_order_item)"
+        },
+        {
+          "column": "plant_id",
+          "references": "dim_plant.plant_id"
+        }
+      ],
+      "notes": "delivery_item normalized to CHAR(6) zero-padded (source: '000010'). sales_order_id and sales_order_item sourced from referenceSdDocument and referenceSdDocumentItem respectively; sales_order_item normalized to CHAR(6). itemBillingBlockReason dropped — 100% empty. lastChangeDate dropped — 100% null. batch is nullable (17% missing — only for batch-managed materials)."
+    },
+    {
+      "table_name": "fact_billing_document",
+      "primary_key": "billing_document_id",
+      "alternate_keys": ["accounting_document_id"],
+      "columns": [
+        "billing_document_id",
+        "billing_document_type",
+        "billing_document_date",
+        "created_at",
+        "last_changed_at",
+        "customer_id",
+        "total_net_amount",
+        "currency",
+        "company_code",
+        "fiscal_year",
+        "accounting_document_id",
+        "is_cancelled"
+      ],
+      "column_types": {
+        "billing_document_id": "VARCHAR(20)",
+        "billing_document_type": "VARCHAR(5)",
+        "billing_document_date": "DATE",
+        "created_at": "TIMESTAMP",
+        "last_changed_at": "TIMESTAMP",
+        "customer_id": "VARCHAR(20)",
+        "total_net_amount": "DECIMAL(15,2)",
+        "currency": "CHAR(3)",
+        "company_code": "VARCHAR(10)",
+        "fiscal_year": "CHAR(4)",
+        "accounting_document_id": "VARCHAR(20)",
+        "is_cancelled": "BOOLEAN"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        }
+      ],
+      "notes": "billing_document_cancellations merged into this table — it was a redundant table (exact duplicate of billing headers filtered to is_cancelled=true with no additional columns). is_cancelled=true records sourced from both billing_document_headers and billing_document_cancellations. cancelledBillingDocument dropped — 100% empty in both source tables. creationDate + creationTime flattened to created_at TIMESTAMP. accounting_document_id is a UNIQUE alternate key (1:1 with billing_document_id) used as join path to fact_journal_entry and fact_payment. soldToParty renamed to customer_id. total_net_amount cast from STRING to DECIMAL(15,2)."
+    },
+    {
+      "table_name": "fact_billing_document_item",
+      "primary_key": ["billing_document_id", "billing_document_item"],
+      "columns": [
+        "billing_document_id",
+        "billing_document_item",
+        "delivery_id",
+        "delivery_item",
+        "product_id",
+        "billing_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency"
+      ],
+      "column_types": {
+        "billing_document_id": "VARCHAR(20)",
+        "billing_document_item": "CHAR(6)",
+        "delivery_id": "VARCHAR(20)",
+        "delivery_item": "CHAR(6)",
+        "product_id": "VARCHAR(30)",
+        "billing_quantity": "DECIMAL(13,3)",
+        "quantity_unit": "VARCHAR(5)",
+        "net_amount": "DECIMAL(15,2)",
+        "currency": "CHAR(3)"
+      },
+      "foreign_keys": [
+        {
+          "column": "billing_document_id",
+          "references": "fact_billing_document.billing_document_id"
+        },
+        {
+          "column": ["delivery_id", "delivery_item"],
+          "references": "fact_outbound_delivery_item.(delivery_id, delivery_item)"
+        },
+        {
+          "column": "product_id",
+          "references": "dim_product.product_id"
+        }
+      ],
+      "notes": "billing_document_item normalized to CHAR(6) zero-padded. delivery_id and delivery_item sourced from referenceSdDocument and referenceSdDocumentItem; delivery_item normalized from '10' to '000010' format (CHAR(6)). material renamed to product_id. net_amount cast from STRING to DECIMAL(15,2)."
+    },
+    {
+      "table_name": "fact_journal_entry",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "columns": [
+        "accounting_document_id",
+        "accounting_document_item",
+        "accounting_document_type",
+        "company_code",
+        "fiscal_year",
+        "customer_id",
+        "gl_account",
+        "reference_billing_document_id",
+        "amount",
+        "currency",
+        "amount_company_code",
+        "company_code_currency",
+        "posting_date",
+        "document_date",
+        "profit_center",
+        "financial_account_type",
+        "clearing_date",
+        "clearing_document_id"
+      ],
+      "column_types": {
+        "accounting_document_id": "VARCHAR(20)",
+        "accounting_document_item": "CHAR(6)",
+        "accounting_document_type": "VARCHAR(5)",
+        "company_code": "VARCHAR(10)",
+        "fiscal_year": "CHAR(4)",
+        "customer_id": "VARCHAR(20)",
+        "gl_account": "VARCHAR(20)",
+        "reference_billing_document_id": "VARCHAR(20)",
+        "amount": "DECIMAL(15,2)",
+        "currency": "CHAR(3)",
+        "amount_company_code": "DECIMAL(15,2)",
+        "company_code_currency": "CHAR(3)",
+        "posting_date": "DATE",
+        "document_date": "DATE",
+        "profit_center": "VARCHAR(20)",
+        "financial_account_type": "CHAR(1)",
+        "clearing_date": "DATE",
+        "clearing_document_id": "VARCHAR(20)"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        },
+        {
+          "column": "reference_billing_document_id",
+          "references": "fact_billing_document.billing_document_id"
+        }
+      ],
+      "notes": "costCenter dropped — 100% empty. assignmentReference dropped — 100% empty. referenceDocument renamed to reference_billing_document_id (confirmed 123/123 referenceDocument values match billing_document_headers.billingDocument). clearingAccountingDocument renamed to clearing_document_id. amountInTransactionCurrency cast from STRING to DECIMAL(15,2)."
+    },
+    {
+      "table_name": "fact_payment",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "columns": [
+        "accounting_document_id",
+        "accounting_document_item",
+        "company_code",
+        "fiscal_year",
+        "customer_id",
+        "billing_accounting_document_id",
+        "amount",
+        "debit_credit_indicator",
+        "currency",
+        "amount_company_code",
+        "company_code_currency",
+        "posting_date",
+        "document_date",
+        "gl_account",
+        "profit_center",
+        "financial_account_type",
+        "clearing_date",
+        "clearing_document_id"
+      ],
+      "column_types": {
+        "accounting_document_id": "VARCHAR(20)",
+        "accounting_document_item": "CHAR(6)",
+        "company_code": "VARCHAR(10)",
+        "fiscal_year": "CHAR(4)",
+        "customer_id": "VARCHAR(20)",
+        "billing_accounting_document_id": "VARCHAR(20)",
+        "amount": "DECIMAL(15,2)",
+        "debit_credit_indicator": "CHAR(1)",
+        "currency": "CHAR(3)",
+        "amount_company_code": "DECIMAL(15,2)",
+        "company_code_currency": "CHAR(3)",
+        "posting_date": "DATE",
+        "document_date": "DATE",
+        "gl_account": "VARCHAR(20)",
+        "profit_center": "VARCHAR(20)",
+        "financial_account_type": "CHAR(1)",
+        "clearing_date": "DATE",
+        "clearing_document_id": "VARCHAR(20)"
+      },
+      "foreign_keys": [
+        {
+          "column": "customer_id",
+          "references": "dim_customer.customer_id"
+        },
+        {
+          "column": "billing_accounting_document_id",
+          "references": "fact_billing_document.accounting_document_id",
+          "note": "Joins via UNIQUE alternate key fact_billing_document.accounting_document_id (not the PK billing_document_id). 120/120 payment accountingDocument values match a billing accountingDocument."
+        }
+      ],
+      "notes": "invoiceReference, invoiceReferenceFiscalYear, salesDocument, salesDocumentItem, assignmentReference, costCenter all dropped — 100% null in entire dataset. DERIVED COLUMN: debit_credit_indicator — 'D' (debit receivable) when amount > 0, 'C' (credit/reversal) when amount < 0. 56/120 records are credits/reversals. accountingDocument renamed to accounting_document_id. clearingAccountingDocument renamed to clearing_document_id. amountInTransactionCurrency cast from STRING to DECIMAL(15,2)."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "dim_customer",
+      "to": "dim_customer_address",
+      "type": "has_address",
+      "join_condition": "dim_customer.customer_id = dim_customer_address.customer_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "dim_customer",
+      "to": "dim_customer_company",
+      "type": "assigned_to_company",
+      "join_condition": "dim_customer.customer_id = dim_customer_company.customer_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "dim_customer",
+      "to": "dim_customer_sales_area",
+      "type": "configured_for_sales_area",
+      "join_condition": "dim_customer.customer_id = dim_customer_sales_area.customer_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "dim_product",
+      "to": "dim_product_plant",
+      "type": "stocked_at",
+      "join_condition": "dim_product.product_id = dim_product_plant.product_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "dim_plant",
+      "to": "dim_product_plant",
+      "type": "stocks",
+      "join_condition": "dim_plant.plant_id = dim_product_plant.plant_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "dim_customer",
+      "to": "fact_sales_order",
+      "type": "placed",
+      "join_condition": "dim_customer.customer_id = fact_sales_order.customer_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "fact_sales_order",
+      "to": "fact_sales_order_item",
+      "type": "contains",
+      "join_condition": "fact_sales_order.sales_order_id = fact_sales_order_item.sales_order_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "fact_sales_order_item",
+      "to": "fact_sales_order_schedule_line",
+      "type": "scheduled_as",
+      "join_condition": "fact_sales_order_item.sales_order_id = fact_sales_order_schedule_line.sales_order_id AND fact_sales_order_item.sales_order_item = fact_sales_order_schedule_line.sales_order_item",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "fact_sales_order_item",
+      "to": "dim_product",
+      "type": "orders",
+      "join_condition": "fact_sales_order_item.product_id = dim_product.product_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_sales_order_item",
+      "to": "dim_plant",
+      "type": "produced_at",
+      "join_condition": "fact_sales_order_item.production_plant_id = dim_plant.plant_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_sales_order_item",
+      "to": "fact_outbound_delivery_item",
+      "type": "fulfilled_by",
+      "join_condition": "fact_sales_order_item.sales_order_id = fact_outbound_delivery_item.sales_order_id AND fact_sales_order_item.sales_order_item = fact_outbound_delivery_item.sales_order_item",
+      "cardinality": "1:1"
+    },
+    {
+      "from": "fact_outbound_delivery_item",
+      "to": "fact_outbound_delivery",
+      "type": "belongs_to",
+      "join_condition": "fact_outbound_delivery_item.delivery_id = fact_outbound_delivery.delivery_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_outbound_delivery_item",
+      "to": "dim_plant",
+      "type": "shipped_from",
+      "join_condition": "fact_outbound_delivery_item.plant_id = dim_plant.plant_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_outbound_delivery_item",
+      "to": "fact_billing_document_item",
+      "type": "billed_as",
+      "join_condition": "fact_outbound_delivery_item.delivery_id = fact_billing_document_item.delivery_id AND fact_outbound_delivery_item.delivery_item = fact_billing_document_item.delivery_item",
+      "cardinality": "1:1"
+    },
+    {
+      "from": "fact_billing_document_item",
+      "to": "fact_billing_document",
+      "type": "belongs_to",
+      "join_condition": "fact_billing_document_item.billing_document_id = fact_billing_document.billing_document_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_billing_document_item",
+      "to": "dim_product",
+      "type": "charges_for",
+      "join_condition": "fact_billing_document_item.product_id = dim_product.product_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_billing_document",
+      "to": "dim_customer",
+      "type": "billed_to",
+      "join_condition": "fact_billing_document.customer_id = dim_customer.customer_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_billing_document",
+      "to": "fact_journal_entry",
+      "type": "posted_as",
+      "join_condition": "fact_billing_document.accounting_document_id = fact_journal_entry.accounting_document_id",
+      "cardinality": "1:N"
+    },
+    {
+      "from": "fact_journal_entry",
+      "to": "fact_billing_document",
+      "type": "references",
+      "join_condition": "fact_journal_entry.reference_billing_document_id = fact_billing_document.billing_document_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_journal_entry",
+      "to": "fact_payment",
+      "type": "cleared_by",
+      "join_condition": "fact_journal_entry.clearing_document_id = fact_payment.clearing_document_id",
+      "cardinality": "N:1"
+    },
+    {
+      "from": "fact_payment",
+      "to": "fact_billing_document",
+      "type": "settles",
+      "join_condition": "fact_payment.billing_accounting_document_id = fact_billing_document.accounting_document_id",
+      "cardinality": "N:1",
+      "note": "Joins via alternate key fact_billing_document.accounting_document_id"
+    },
+    {
+      "from": "fact_payment",
+      "to": "dim_customer",
+      "type": "paid_by",
+      "join_condition": "fact_payment.customer_id = dim_customer.customer_id",
+      "cardinality": "N:1"
+    }
+  ],
+  "transformation_mapping": [
+    {
+      "original_table": "business_partners",
+      "new_tables": ["dim_customer"],
+      "notes": "Dropped customer (= businessPartner always), organizationBpName1 (= businessPartnerName), businessPartnerFullName (= businessPartnerName), formOfAddress (constant '0003'), correspondenceLanguage (100% empty), firstName/lastName (100% empty — org-type partners). creationDate + creationTime{hours,minutes,seconds} flattened to created_at TIMESTAMP."
+    },
+    {
+      "original_table": "business_partner_addresses",
+      "new_tables": ["dim_customer_address"],
+      "notes": "Dropped 8 PO Box fields (100% empty), taxJurisdiction (100% empty), transportZone (100% empty). Remaining address fields retained as nullable."
+    },
+    {
+      "original_table": "customer_company_assignments",
+      "new_tables": ["dim_customer_company"],
+      "notes": "Dropped 7 accounting clerk contact fields (100% empty) and paymentTerms (75% empty, superseded by customer_sales_area_assignments.customerPaymentTerms)."
+    },
+    {
+      "original_table": "customer_sales_area_assignments",
+      "new_tables": ["dim_customer_sales_area"],
+      "notes": "Dropped billingIsBlockedForCustomer, creditControlArea, salesGroup, salesOffice, supplyingPlant, salesDistrict (all 100% empty), exchangeRateType (93% empty)."
+    },
+    {
+      "original_table": "products",
+      "new_tables": ["dim_product"],
+      "notes": "Merged with product_descriptions (flattened productDescription into product row — language='EN' always, no multilingual dimension needed). Dropped crossPlantStatus and crossPlantStatusValidityDate (100% empty/null)."
+    },
+    {
+      "original_table": "product_descriptions",
+      "new_tables": ["dim_product"],
+      "notes": "Merged into dim_product. Language key dropped — only EN exists in dataset."
+    },
+    {
+      "original_table": "product_plants",
+      "new_tables": ["dim_product_plant"],
+      "notes": "Dropped countryOfOrigin, regionOfOrigin, productionInvtryManagedLoc, fiscalYearVariant (all 100% empty across 3,036 records). Retained product, plant, availabilityCheckType, mrpType, profitCenter."
+    },
+    {
+      "original_table": "plants",
+      "new_tables": ["dim_plant"],
+      "notes": "Dropped defaultPurchasingOrganization (100% empty), plantCategory (100% empty), plantCustomer (= plant_id always), plantSupplier (= plant_id mostly — self-referential)."
+    },
+    {
+      "original_table": "sales_order_headers",
+      "new_tables": ["fact_sales_order"],
+      "notes": "Dropped 7 fields that are 100% empty: salesGroup, salesOffice, overallOrdReltdBillgStatus, overallSdDocReferenceStatus, headerBillingBlockReason, deliveryBlockReason, totalCreditCheckStatus. totalNetAmount cast STRING → DECIMAL(15,2). soldToParty renamed to customer_id."
+    },
+    {
+      "original_table": "sales_order_items",
+      "new_tables": ["fact_sales_order_item"],
+      "notes": "itemBillingBlockReason dropped (100% empty). salesOrderItem normalized to CHAR(6) zero-padded. material renamed to product_id. productionPlant renamed to production_plant_id. netAmount cast STRING → DECIMAL(15,2). salesDocumentRjcnReason renamed to rejection_reason (retained — has data for ~18% of records)."
+    },
+    {
+      "original_table": "sales_order_schedule_lines",
+      "new_tables": ["fact_sales_order_schedule_line"],
+      "notes": "Kept as separate table — cannot merge into fact_sales_order_item because 12 SO items have 2 schedule lines. schedule_line retained as part of composite PK. sales_order_item normalized to CHAR(6). confirmedDeliveryDate and confdOrderQtyByMatlAvailCheck renamed to confirmed_delivery_date and confirmed_quantity."
+    },
+    {
+      "original_table": "outbound_delivery_headers",
+      "new_tables": ["fact_outbound_delivery"],
+      "notes": "1NF: creationDate + creationTime{hours,minutes,seconds} → created_at TIMESTAMP. actualGoodsMovementDate + actualGoodsMovementTime → actual_goods_movement_at TIMESTAMP (nullable). Dropped overallProofOfDeliveryStatus, deliveryBlockReason, headerBillingBlockReason (100% empty). deliveryDocument renamed to delivery_id."
+    },
+    {
+      "original_table": "outbound_delivery_items",
+      "new_tables": ["fact_outbound_delivery_item"],
+      "notes": "deliveryDocumentItem normalized to CHAR(6) (source already uses '000010' format). referenceSdDocument → sales_order_id, referenceSdDocumentItem normalized to CHAR(6) → sales_order_item. plant renamed to plant_id. itemBillingBlockReason dropped (100% empty). lastChangeDate dropped (100% null). batch retained as nullable."
+    },
+    {
+      "original_table": "billing_document_headers",
+      "new_tables": ["fact_billing_document"],
+      "notes": "MERGED with billing_document_cancellations (redundant table — identical schema, no additional data). cancelledBillingDocument dropped (100% empty in both source tables). is_cancelled column covers both. creationDate + creationTime → created_at TIMESTAMP. totalNetAmount cast STRING → DECIMAL(15,2). soldToParty renamed to customer_id."
+    },
+    {
+      "original_table": "billing_document_cancellations",
+      "new_tables": ["fact_billing_document"],
+      "notes": "Eliminated as a separate table. Records merged into fact_billing_document with is_cancelled=true. No unique data was present in cancellations table — cancelledBillingDocument was 100% empty."
+    },
+    {
+      "original_table": "billing_document_items",
+      "new_tables": ["fact_billing_document_item"],
+      "notes": "billingDocumentItem normalized to CHAR(6). referenceSdDocument → delivery_id, referenceSdDocumentItem normalized from '10' to CHAR(6) '000010' format → delivery_item. material renamed to product_id. netAmount cast STRING → DECIMAL(15,2)."
+    },
+    {
+      "original_table": "journal_entry_items_accounts_receivable",
+      "new_tables": ["fact_journal_entry"],
+      "notes": "costCenter dropped (100% empty). assignmentReference dropped (100% empty). referenceDocument renamed to reference_billing_document_id (confirmed FK to fact_billing_document.billing_document_id). clearingAccountingDocument renamed to clearing_document_id. amountInTransactionCurrency cast STRING → DECIMAL(15,2). customer renamed to customer_id."
+    },
+    {
+      "original_table": "payments_accounts_receivable",
+      "new_tables": ["fact_payment"],
+      "notes": "Dropped invoiceReference, invoiceReferenceFiscalYear, salesDocument, salesDocumentItem, assignmentReference, costCenter (all 100% null). DERIVED: debit_credit_indicator = 'D' if amount > 0 else 'C' (56/120 records are credits/reversals). accountingDocument renamed to billing_accounting_document_id for its use as FK to fact_billing_document.accounting_document_id. clearingAccountingDocument renamed to clearing_document_id. amountInTransactionCurrency cast STRING → DECIMAL(15,2)."
+    }
+  ],
+  "normalization_notes": [
+    {
+      "step": "1NF",
+      "description": "Time fields stored as nested JSON objects {hours, minutes, seconds} in outbound_delivery_headers and billing_document_headers violated atomicity. Fixed by combining with their paired date field into a single TIMESTAMP column: creationDate + creationTime → created_at; actualGoodsMovementDate + actualGoodsMovementTime → actual_goods_movement_at."
+    },
+    {
+      "step": "1NF",
+      "description": "All monetary amount fields (totalNetAmount, netAmount, amountInTransactionCurrency, amountInCompanyCodeCurrency) stored as STRING type. Fixed by defining column types as DECIMAL(15,2) with explicit cast during ingestion."
+    },
+    {
+      "step": "1NF",
+      "description": "Item number format was inconsistent across tables — not atomic in the relational sense because the same logical key ('item 10') was represented as '10' in sales_order_items/billing_document_items and '000010' in outbound_delivery_items. Fixed by standardizing all item number columns to CHAR(6) zero-padded format during ingestion."
+    },
+    {
+      "step": "2NF",
+      "description": "billing_document_cancellations had a composite key identical to billing_document_headers.billingDocument with no additional attributes — every column depended on the same key as billing_document_headers. The table itself was a partial entity duplicating a subset of billing_document_headers. Fixed by merging into fact_billing_document with an is_cancelled flag."
+    },
+    {
+      "step": "2NF",
+      "description": "product_descriptions had a composite key (product, language) but language was always 'EN' — the productDescription attribute therefore had a partial dependency on product alone. Fixed by merging productDescription directly into dim_product, eliminating the language key."
+    },
+    {
+      "step": "2NF",
+      "description": "sales_order_schedule_lines could not be merged into fact_sales_order_item because confirmedDeliveryDate and confirmedQuantity depend on the full (salesOrder, salesOrderItem, scheduleLine) composite key — 12 items have 2 schedule lines with different dates/quantities. Kept as a separate table to preserve full composite key dependency."
+    },
+    {
+      "step": "3NF",
+      "description": "business_partners contained three fields storing the same company name (businessPartnerName, organizationBpName1, businessPartnerFullName) — transitive dependency between name attributes. Fixed by retaining only businessPartnerName as customer_name and dropping the other two."
+    },
+    {
+      "step": "3NF",
+      "description": "business_partners.customer was always identical to business_partners.businessPartner — a column that transitively depended on the primary key through itself. Fixed by dropping the customer field and using businessPartner as the sole canonical customer_id."
+    },
+    {
+      "step": "3NF",
+      "description": "fact_payment had a debit/credit ambiguity: amountInTransactionCurrency could be positive (receivable) or negative (credit/reversal) but no indicator field existed to distinguish transaction type. Added derived debit_credit_indicator column ('D'/'C') to make transaction direction an explicit non-key attribute rather than encoding it in the amount sign."
+    },
+    {
+      "step": "3NF",
+      "description": "Customer dimension split into four tables (dim_customer, dim_customer_address, dim_customer_company, dim_customer_sales_area) because business partner core attributes, address attributes, company code attributes, and sales area attributes each represent independent functional dependency groups with different composite keys. Merging them would create partial and transitive dependencies."
+    }
+  ]
+}

@@ -1,0 +1,640 @@
+{
+  "nodes": [
+    {
+      "name": "Customer",
+      "source_table": "dim_customer",
+      "primary_key": "customer_id",
+      "attributes": [
+        "customer_name",
+        "business_partner_category",
+        "business_partner_grouping",
+        "is_blocked",
+        "is_archived",
+        "created_by",
+        "created_at"
+      ]
+    },
+    {
+      "name": "CustomerAddress",
+      "source_table": "dim_customer_address",
+      "primary_key": "address_id",
+      "attributes": [
+        "customer_id",
+        "city_name",
+        "country",
+        "region",
+        "street_name",
+        "postal_code",
+        "address_timezone",
+        "valid_from",
+        "valid_to"
+      ]
+    },
+    {
+      "name": "CustomerCompany",
+      "source_table": "dim_customer_company",
+      "primary_key": ["customer_id", "company_code"],
+      "attributes": [
+        "reconciliation_account",
+        "customer_account_group",
+        "deletion_indicator"
+      ]
+    },
+    {
+      "name": "CustomerSalesArea",
+      "source_table": "dim_customer_sales_area",
+      "primary_key": ["customer_id", "sales_organization", "distribution_channel", "division"],
+      "attributes": [
+        "customer_payment_terms",
+        "currency",
+        "delivery_priority",
+        "incoterms_classification",
+        "incoterms_location",
+        "shipping_condition",
+        "complete_delivery_required"
+      ]
+    },
+    {
+      "name": "Product",
+      "source_table": "dim_product",
+      "primary_key": "product_id",
+      "attributes": [
+        "product_old_id",
+        "product_type",
+        "product_description",
+        "product_group",
+        "base_unit",
+        "division",
+        "industry_sector",
+        "gross_weight",
+        "net_weight",
+        "weight_unit",
+        "is_deleted"
+      ]
+    },
+    {
+      "name": "Plant",
+      "source_table": "dim_plant",
+      "primary_key": "plant_id",
+      "attributes": [
+        "plant_name",
+        "valuation_area",
+        "sales_organization",
+        "distribution_channel",
+        "division",
+        "factory_calendar"
+      ]
+    },
+    {
+      "name": "ProductPlant",
+      "source_table": "dim_product_plant",
+      "primary_key": ["product_id", "plant_id"],
+      "attributes": [
+        "availability_check_type",
+        "mrp_type",
+        "profit_center"
+      ],
+      "note": "Junction node with additional attributes — retained as node, not collapsed to edge."
+    },
+    {
+      "name": "SalesOrder",
+      "source_table": "fact_sales_order",
+      "primary_key": "sales_order_id",
+      "attributes": [
+        "sales_order_type",
+        "sales_organization",
+        "distribution_channel",
+        "customer_id",
+        "created_by",
+        "created_at",
+        "total_net_amount",
+        "currency",
+        "overall_delivery_status",
+        "requested_delivery_date",
+        "payment_terms"
+      ]
+    },
+    {
+      "name": "SalesOrderItem",
+      "source_table": "fact_sales_order_item",
+      "primary_key": ["sales_order_id", "sales_order_item"],
+      "attributes": [
+        "item_category",
+        "product_id",
+        "requested_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency",
+        "material_group",
+        "production_plant_id",
+        "storage_location",
+        "rejection_reason"
+      ]
+    },
+    {
+      "name": "SalesOrderScheduleLine",
+      "source_table": "fact_sales_order_schedule_line",
+      "primary_key": ["sales_order_id", "sales_order_item", "schedule_line"],
+      "attributes": [
+        "confirmed_delivery_date",
+        "confirmed_quantity",
+        "quantity_unit"
+      ]
+    },
+    {
+      "name": "OutboundDelivery",
+      "source_table": "fact_outbound_delivery",
+      "primary_key": "delivery_id",
+      "attributes": [
+        "shipping_point",
+        "created_at",
+        "goods_movement_status",
+        "picking_status",
+        "actual_goods_movement_at"
+      ]
+    },
+    {
+      "name": "OutboundDeliveryItem",
+      "source_table": "fact_outbound_delivery_item",
+      "primary_key": ["delivery_id", "delivery_item"],
+      "attributes": [
+        "sales_order_id",
+        "sales_order_item",
+        "actual_delivery_quantity",
+        "quantity_unit",
+        "plant_id",
+        "storage_location",
+        "batch"
+      ]
+    },
+    {
+      "name": "BillingDocument",
+      "source_table": "fact_billing_document",
+      "primary_key": "billing_document_id",
+      "alternate_keys": ["accounting_document_id"],
+      "attributes": [
+        "billing_document_type",
+        "billing_document_date",
+        "created_at",
+        "customer_id",
+        "total_net_amount",
+        "currency",
+        "company_code",
+        "fiscal_year",
+        "accounting_document_id",
+        "is_cancelled"
+      ]
+    },
+    {
+      "name": "BillingDocumentItem",
+      "source_table": "fact_billing_document_item",
+      "primary_key": ["billing_document_id", "billing_document_item"],
+      "attributes": [
+        "delivery_id",
+        "delivery_item",
+        "product_id",
+        "billing_quantity",
+        "quantity_unit",
+        "net_amount",
+        "currency"
+      ]
+    },
+    {
+      "name": "JournalEntry",
+      "source_table": "fact_journal_entry",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "attributes": [
+        "accounting_document_type",
+        "company_code",
+        "fiscal_year",
+        "customer_id",
+        "gl_account",
+        "reference_billing_document_id",
+        "amount",
+        "currency",
+        "posting_date",
+        "clearing_date",
+        "clearing_document_id",
+        "profit_center",
+        "financial_account_type"
+      ]
+    },
+    {
+      "name": "Payment",
+      "source_table": "fact_payment",
+      "primary_key": ["accounting_document_id", "accounting_document_item"],
+      "attributes": [
+        "billing_accounting_document_id",
+        "customer_id",
+        "amount",
+        "debit_credit_indicator",
+        "currency",
+        "clearing_date",
+        "clearing_document_id",
+        "posting_date",
+        "gl_account",
+        "profit_center",
+        "financial_account_type"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "CustomerAddress",
+      "to": "Customer",
+      "relationship": "belongs_to",
+      "join_condition": "CustomerAddress.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 8,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 1
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "CustomerCompany",
+      "to": "Customer",
+      "relationship": "assigned_to_company",
+      "join_condition": "CustomerCompany.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 8,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 1
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "CustomerSalesArea",
+      "to": "Customer",
+      "relationship": "configured_for_sales_area",
+      "join_condition": "CustomerSalesArea.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 28,
+        "parent_records": 8,
+        "matched": 8,
+        "unmatched": 0,
+        "max_children_per_parent": 4
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "ProductPlant",
+      "to": "Product",
+      "relationship": "stocked_at_product",
+      "join_condition": "ProductPlant.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 3036,
+        "parent_records": 69,
+        "matched": 69,
+        "unmatched": 0,
+        "max_children_per_parent": 44
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "ProductPlant",
+      "to": "Plant",
+      "relationship": "stocked_at_plant",
+      "join_condition": "ProductPlant.plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 3036,
+        "parent_records": 44,
+        "matched": 44,
+        "unmatched": 0,
+        "max_children_per_parent": 69
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "SalesOrder",
+      "to": "Customer",
+      "relationship": "placed_by",
+      "join_condition": "SalesOrder.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 100,
+        "parent_records": 8,
+        "matched": 100,
+        "unmatched": 0,
+        "max_children_per_parent": 72
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "SalesOrder",
+      "relationship": "belongs_to_order",
+      "join_condition": "SalesOrderItem.sales_order_id = SalesOrder.sales_order_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 167,
+        "parent_records": 100,
+        "matched": 100,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Product",
+      "relationship": "orders_product",
+      "join_condition": "SalesOrderItem.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 167,
+        "parent_records": 69,
+        "matched": 69,
+        "unmatched": 0,
+        "max_children_per_parent": 11
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "SalesOrderItem",
+      "to": "Plant",
+      "relationship": "produced_at",
+      "join_condition": "SalesOrderItem.production_plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 167,
+        "parent_records": 7,
+        "matched": 167,
+        "unmatched": 0,
+        "max_children_per_parent": 110
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "SalesOrderScheduleLine",
+      "to": "SalesOrderItem",
+      "relationship": "scheduled_for_item",
+      "join_condition": "SalesOrderScheduleLine.sales_order_id = SalesOrderItem.sales_order_id AND SalesOrderScheduleLine.sales_order_item = SalesOrderItem.sales_order_item",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 179,
+        "parent_records": 167,
+        "matched": 167,
+        "unmatched": 0,
+        "max_children_per_parent": 2,
+        "note": "12 SO items have 2 schedule lines representing partial delivery confirmations"
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "SalesOrderItem",
+      "relationship": "fulfills",
+      "join_condition": "OutboundDeliveryItem.sales_order_id = SalesOrderItem.sales_order_id AND OutboundDeliveryItem.sales_order_item = SalesOrderItem.sales_order_item",
+      "cardinality": "ONE_TO_ONE",
+      "data_validation": {
+        "child_records": 137,
+        "parent_records": 167,
+        "matched": 137,
+        "unmatched": 0,
+        "note": "30 SO items have no delivery item yet (order placed but not yet shipped)"
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "OutboundDelivery",
+      "relationship": "belongs_to_delivery",
+      "join_condition": "OutboundDeliveryItem.delivery_id = OutboundDelivery.delivery_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 137,
+        "parent_records": 86,
+        "matched": 86,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "OutboundDeliveryItem",
+      "to": "Plant",
+      "relationship": "shipped_from",
+      "join_condition": "OutboundDeliveryItem.plant_id = Plant.plant_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 137,
+        "parent_records": 5,
+        "matched": 137,
+        "unmatched": 0,
+        "max_children_per_parent": 110
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "OutboundDeliveryItem",
+      "relationship": "billed_from_delivery",
+      "join_condition": "BillingDocumentItem.delivery_id = OutboundDeliveryItem.delivery_id AND BillingDocumentItem.delivery_item = OutboundDeliveryItem.delivery_item",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 245,
+        "parent_records": 137,
+        "matched": 245,
+        "unmatched": 0,
+        "max_children_per_parent": 2,
+        "note": "121 of 137 delivery items appear in 2 billing doc items: one original (cancelled) + one replacement. All doubly-billed items have exactly one cancelled and one active billing document."
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "BillingDocument",
+      "relationship": "belongs_to_billing_doc",
+      "join_condition": "BillingDocumentItem.billing_document_id = BillingDocument.billing_document_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 245,
+        "parent_records": 163,
+        "matched": 163,
+        "unmatched": 0,
+        "max_children_per_parent": 12
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "BillingDocumentItem",
+      "to": "Product",
+      "relationship": "charges_for_product",
+      "join_condition": "BillingDocumentItem.product_id = Product.product_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 245,
+        "parent_records": 69,
+        "matched": 69,
+        "unmatched": 0
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "BillingDocument",
+      "to": "Customer",
+      "relationship": "billed_to",
+      "join_condition": "BillingDocument.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 163,
+        "parent_records": 4,
+        "matched": 163,
+        "unmatched": 0,
+        "max_children_per_parent": 143
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "JournalEntry",
+      "to": "BillingDocument",
+      "relationship": "posted_for",
+      "join_condition": "JournalEntry.accounting_document_id = BillingDocument.accounting_document_id",
+      "join_key_note": "Joins via UNIQUE alternate key BillingDocument.accounting_document_id (not PK billing_document_id)",
+      "cardinality": "ONE_TO_ONE",
+      "data_validation": {
+        "child_records": 123,
+        "parent_records": 163,
+        "matched": 123,
+        "unmatched": 0,
+        "note": "40 billing documents have no journal entry yet (unposted or cancelled without FI posting)"
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "JournalEntry",
+      "to": "BillingDocument",
+      "relationship": "references_invoice",
+      "join_condition": "JournalEntry.reference_billing_document_id = BillingDocument.billing_document_id",
+      "join_key_note": "Secondary reference join using BillingDocument PK. Provides explicit document-level reference from journal to billing.",
+      "cardinality": "ONE_TO_ONE",
+      "data_validation": {
+        "child_records": 123,
+        "parent_records": 163,
+        "matched": 123,
+        "unmatched": 0
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "JournalEntry",
+      "to": "Customer",
+      "relationship": "receivable_from",
+      "join_condition": "JournalEntry.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 123,
+        "parent_records": 8,
+        "matched": 123,
+        "unmatched": 0
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "Payment",
+      "to": "BillingDocument",
+      "relationship": "settles",
+      "join_condition": "Payment.billing_accounting_document_id = BillingDocument.accounting_document_id",
+      "join_key_note": "Joins via UNIQUE alternate key BillingDocument.accounting_document_id",
+      "cardinality": "ONE_TO_ONE",
+      "data_validation": {
+        "child_records": 120,
+        "parent_records": 163,
+        "matched": 120,
+        "unmatched": 0,
+        "max_children_per_parent": 1,
+        "note": "43 billing documents not yet paid"
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "Payment",
+      "to": "JournalEntry",
+      "relationship": "clears",
+      "join_condition": "Payment.clearing_document_id = JournalEntry.clearing_document_id",
+      "cardinality": "ONE_TO_MANY",
+      "data_validation": {
+        "payment_clearing_docs": 76,
+        "journal_clearing_docs": 76,
+        "matched": 76,
+        "note": "44 payments share clearing docs with journal entries. Not all payments/journal entries have a clearing document (open items)."
+      },
+      "confidence": "HIGH"
+    },
+    {
+      "from": "Payment",
+      "to": "Customer",
+      "relationship": "received_from",
+      "join_condition": "Payment.customer_id = Customer.customer_id",
+      "cardinality": "MANY_TO_ONE",
+      "data_validation": {
+        "child_records": 120,
+        "parent_records": 2,
+        "matched": 120,
+        "unmatched": 0,
+        "max_children_per_parent": 106
+      },
+      "confidence": "HIGH"
+    }
+  ],
+  "special_cases": [
+    {
+      "node": "ProductPlant",
+      "type": "JUNCTION_WITH_ATTRIBUTES",
+      "description": "ProductPlant connects Product and Plant in a MANY_TO_MANY relationship. It contains 3 additional non-FK attributes (availability_check_type, mrp_type, profit_center), so it is retained as a node rather than collapsed into a single MANY_TO_MANY edge.",
+      "effective_cardinality": "MANY_TO_MANY",
+      "stats": "69 products × 44 plants = 3,036 product-plant combinations"
+    },
+    {
+      "node": "BillingDocumentItem",
+      "type": "MULTI_BILLED_DELIVERY_ITEMS",
+      "description": "121 out of 137 delivery items appear in 2 billing document items each. In every case, one billing document is cancelled (is_cancelled=true) and one is active. This represents the SAP cancellation-rebilling pattern: original invoice → cancel → reissue. Query logic must filter is_cancelled=false for current billing state.",
+      "affected_edge": "BillingDocumentItem → OutboundDeliveryItem"
+    },
+    {
+      "node": "SalesOrderScheduleLine",
+      "type": "PARTIAL_KEY_DEPENDENCY",
+      "description": "12 SalesOrderItems have 2 schedule lines with different confirmed_delivery_date and confirmed_quantity values, representing partial delivery confirmation (some quantity confirmed on one date, remainder on another). The latest non-zero schedule line represents the effective delivery commitment.",
+      "affected_edge": "SalesOrderScheduleLine → SalesOrderItem"
+    },
+    {
+      "edge": "JournalEntry → BillingDocument",
+      "type": "DUAL_PATH",
+      "description": "Two valid join paths exist between JournalEntry and BillingDocument: (1) via accounting_document_id (alternate key) for the posting relationship, and (2) via reference_billing_document_id = billing_document_id for the reference relationship. Both are validated in data. Prefer path (2) for direct invoice tracing."
+    }
+  ],
+  "o2c_primary_path": {
+    "description": "The core Order-to-Cash traversal path through the graph",
+    "sequence": [
+      "Customer",
+      "SalesOrder",
+      "SalesOrderItem",
+      "OutboundDeliveryItem",
+      "OutboundDelivery",
+      "BillingDocumentItem",
+      "BillingDocument",
+      "JournalEntry",
+      "Payment"
+    ],
+    "joins": [
+      "Customer.customer_id = SalesOrder.customer_id",
+      "SalesOrder.sales_order_id = SalesOrderItem.sales_order_id",
+      "SalesOrderItem.(sales_order_id, sales_order_item) = OutboundDeliveryItem.(sales_order_id, sales_order_item)",
+      "OutboundDeliveryItem.delivery_id = OutboundDelivery.delivery_id",
+      "OutboundDeliveryItem.(delivery_id, delivery_item) = BillingDocumentItem.(delivery_id, delivery_item)",
+      "BillingDocumentItem.billing_document_id = BillingDocument.billing_document_id",
+      "BillingDocument.accounting_document_id = JournalEntry.accounting_document_id",
+      "JournalEntry.clearing_document_id = Payment.clearing_document_id"
+    ]
+  }
+}
