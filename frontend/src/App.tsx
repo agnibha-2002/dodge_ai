@@ -912,9 +912,9 @@ export default function App() {
             collapsedSize={3}
             panelRef={chatPanelRef}
             onResize={(size) => {
-              // Keep state in sync when user drags the resize handle to collapse
-              // v4: onResize receives a plain number (percentage), not an object
-              setIsChatMinimized(size <= 5);
+              // Keep state in sync when user drags the resize handle to collapse.
+              const sizeNum = typeof size === "number" ? size : Number(size);
+              setIsChatMinimized(Number.isFinite(sizeNum) && sizeNum <= 5);
             }}
           >
             <ChatPanel isMinimized={isChatMinimized} onToggle={handleChatToggle} onHighlight={handleHighlight} />
