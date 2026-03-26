@@ -153,7 +153,9 @@ _OPERATOR_PATTERNS = [
     (r"(?:less|below|under|fewer|<)\s*(?:than\s+)?(\d[\d,.]*)", "<"),
     (r"(?:at least|>=)\s*(\d[\d,.]*)", ">="),
     (r"(?:at most|<=)\s*(\d[\d,.]*)", "<="),
-    (r"(?:equals?|=|is)\s+[\"']?([^\"']+)[\"']?", "="),
+    (r"(?:equals?|=|is)\s+[\"']?([^\"'\s][^\"']*?)[\"']?(?:\s|$|[?.,])", "="),
+    # "of type X", "with type X", "for type X", "type X"
+    (r"(?:of|with|for|having)?\s*(?:type|status|category|group)\s+([A-Za-z0-9_-]+)", "="),
 ]
 
 _FIELD_KEYWORDS = {
@@ -200,13 +202,23 @@ def _extract_filters(
     if not matched_field:
         return filters
 
+    # Boolean fields (is_blocked, is_archived, is_deleted, has_*):
+    # presence of keyword → true, negation ("not blocked", "unblocked") → false
+    if matched_field.startswith("is_") or matched_field.startswith("has_"):
+        negated = bool(re.search(r"\b(?:not|un|non|no)\s+" + re.escape(matched_field.split("_", 1)[1]), text_low))
+        bool_val = "false" if negated else "true"
+        filters.append(FilterCondition(field=matched_field, operator="=", value=bool_val))
+        return filters
+
     # Try operator patterns
     for pattern, operator in _OPERATOR_PATTERNS:
         m = re.search(pattern, text_low)
         if m:
             value = m.group(1).strip().rstrip(".,")
-            filters.append(FilterCondition(field=matched_field, operator=operator, value=value))
-            break
+            # Skip empty or stop-word values
+            if value and value not in ("the", "a", "an", "of", "for", "with"):
+                filters.append(FilterCondition(field=matched_field, operator=operator, value=value))
+                break
 
     return filters
 

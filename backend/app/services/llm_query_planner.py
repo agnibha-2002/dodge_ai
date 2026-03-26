@@ -42,6 +42,7 @@ from app.services.llm_guardrails import (
     sanitize_operator,
     sanitize_question,
 )
+from app.services.graph_analytics import build_analytics, format_analytics_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,75 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 from app.services.hf_client import hf_chat_completion
 
 # ─────────────────────────────────────────────
-# Prompt template (matches the spec exactly)
+# v1 — optimized strict planner
+# ─────────────────────────────────────────────
+# Handles lookup / filter / simple-aggregate queries.
+# Smaller output schema → fewer hallucinations, faster inference.
+# Escalates to the full planner on LOW confidence or complex intent.
+
+_SYSTEM_PROMPT_V1 = """\
+You are a strict query planner.
+
+INPUT:
+
+User query:
+"{user_query}"
+
+Schema:
+{schema}
+
+OBJECTIVE:
+
+Extract a structured query plan.
+
+OUTPUT FORMAT (STRICT JSON):
+
+{
+  "entity": "...",
+  "filters": [
+    {
+      "field": "...",
+      "operator": "=",
+      "value": "..."
+    }
+  ],
+  "aggregation": null,
+  "confidence": "HIGH | MEDIUM | LOW"
+}
+
+RULES:
+
+- ONLY use fields from schema
+- DO NOT generate SQL
+- DO NOT explain
+- DO NOT hallucinate
+- If unsure → confidence LOW
+
+IMPORTANT:
+
+Output MUST be valid JSON only.\
+"""
+
+# v1 user message — schema is a single compact block
+_USER_TEMPLATE_V1 = """\
+User query:
+"{user_query}"
+
+Schema:
+{schema}\
+"""
+
+# Keywords that require the full planner (traverse / path / anomaly)
+_COMPLEX_INTENT_PATTERNS = re.compile(
+    r"\b(linked|connected|through|via|path|flow|trace|journey|"
+    r"missing|without|unmatched|broken|no matching|end.to.end|"
+    r"from .+ to |between .+ and )\b",
+    re.IGNORECASE,
+)
+
+
+# ─────────────────────────────────────────────
+# Full planner prompt template
 # ─────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
@@ -128,6 +197,9 @@ Available relationships:
 
 Available attributes per entity:
 {attributes_per_entity}
+
+Graph structural insights:
+{graph_insights}
 """
 
 
@@ -136,7 +208,12 @@ Available attributes per entity:
 # ─────────────────────────────────────────────
 
 def _build_schema_context(svc: GraphService) -> dict[str, Any]:
-    """Extract entities, relationships, and attributes from the live graph."""
+    """
+    Extract entities, relationships, attributes, and graph analytics from the live graph.
+
+    The analytics section injects structural hints (communities, hubs, bridges) that
+    help the LLM planner choose better intent types and traversal anchors.
+    """
     entities = [n.name for n in svc._graph.nodes]
 
     relationships = []
@@ -150,11 +227,144 @@ def _build_schema_context(svc: GraphService) -> dict[str, Any]:
         pks = node.primary_key if isinstance(node.primary_key, list) else [node.primary_key]
         attributes_per_entity[node.name] = pks + node.attributes
 
+    # Graph-structural analytics — cached after first call
+    try:
+        analytics = build_analytics(svc)
+        graph_insights = format_analytics_for_prompt(analytics)
+    except Exception:
+        graph_insights = ""
+
     return {
         "entities": entities,
         "relationships": relationships,
         "attributes_per_entity": attributes_per_entity,
+        "graph_insights": graph_insights,
     }
+
+
+def _build_compact_schema(svc: GraphService) -> str:
+    """
+    Format schema as a compact, human-readable block for the v1 prompt.
+
+    Example output:
+      Entities and attributes:
+        SalesOrder: order_id, customer_id, status, total_amount
+        Customer:   customer_id, name, region
+
+      Relationships:
+        Customer --[PLACED]--> SalesOrder
+        SalesOrder --[FULFILLED_BY]--> OutboundDelivery
+    """
+    lines: list[str] = ["Entities and attributes:"]
+    for node in svc._graph.nodes:
+        pks = node.primary_key if isinstance(node.primary_key, list) else [node.primary_key]
+        all_fields = pks + node.attributes
+        lines.append(f"  {node.name}: {', '.join(all_fields)}")
+
+    lines.append("\nRelationships:")
+    for edge in svc._edges:
+        lines.append(f"  {edge.from_node} --[{edge.relationship}]--> {edge.to_node}")
+
+    return "\n".join(lines)
+
+
+def _validate_plan_v1(
+    raw: dict,
+    valid_entities: set[str],
+    attributes_per_entity: dict[str, list[str]],
+) -> Optional[GraphQueryPlan]:
+    """
+    Parse v1 LLM output into a GraphQueryPlan.
+
+    v1 output schema:
+      { "entity": str, "filters": [...], "aggregation": obj | null, "confidence": str }
+
+    Type inference:
+      aggregation present  → "aggregate"
+      filters non-empty    → "filter"
+      otherwise            → "lookup"
+    """
+    try:
+        entity = raw.get("entity")
+        if entity and entity not in valid_entities:
+            logger.warning("v1 planner hallucinated entity: %s", entity)
+            entity = None
+
+        # Filters
+        filters: list[PlanFilterCondition] = []
+        for f in (raw.get("filters") or [])[:MAX_FILTERS]:
+            if not isinstance(f, dict) or not f.get("field") or f.get("value") is None:
+                continue
+            field = str(f["field"])
+            if entity:
+                allowed = set(attributes_per_entity.get(entity, [])) | {"id", "pk"}
+                if field not in allowed:
+                    logger.warning("v1 dropping out-of-schema filter field '%s' for %s", field, entity)
+                    continue
+            filters.append(PlanFilterCondition(
+                entity=entity,
+                field=field,
+                operator=sanitize_operator(f.get("operator", "=")),
+                value=sanitize_filter_value(f["value"]),
+            ))
+
+        # Aggregation
+        aggregation = None
+        agg_raw = raw.get("aggregation")
+        if isinstance(agg_raw, dict):
+            metric = agg_raw.get("metric", "count")
+            if metric in {"count", "sum", "avg", "max", "min"}:
+                limit_raw = agg_raw.get("limit", 10)
+                try:
+                    limit = int(limit_raw) if limit_raw is not None else 10
+                except (TypeError, ValueError):
+                    limit = 10
+                aggregation = AggregationSpec(
+                    metric=metric,
+                    group_by=agg_raw.get("group_by"),
+                    target=agg_raw.get("target"),
+                    sort=agg_raw.get("sort", "desc"),
+                    limit=limit,
+                )
+
+        # Infer intent type
+        if aggregation is not None:
+            plan_type = "aggregate"
+        elif filters:
+            plan_type = "filter"
+        else:
+            plan_type = "lookup"
+
+        # Confidence
+        conf_raw = str(raw.get("confidence", "MEDIUM")).upper()
+        confidence = (
+            Confidence.HIGH if conf_raw == "HIGH" else
+            Confidence.LOW if conf_raw == "LOW" else
+            Confidence.MEDIUM
+        )
+
+        return GraphQueryPlan(
+            type=plan_type,
+            start_entity=entity,
+            target_entity=None,
+            aggregation=aggregation,
+            path=None,
+            filters=filters,
+            anomaly=None,
+            confidence=confidence,
+        )
+
+    except Exception as exc:
+        logger.exception("v1 plan validation error: %s", exc)
+        return None
+
+
+def _needs_full_planner(question: str) -> bool:
+    """
+    Return True when the question likely needs traverse / path / anomaly intent
+    which the v1 planner cannot express.  In that case we skip v1 entirely.
+    """
+    return bool(_COMPLEX_INTENT_PATTERNS.search(question))
 
 
 def _entity_aliases(svc: GraphService) -> dict[str, str]:
@@ -450,7 +660,168 @@ def _rule_based_fallback(question: str, svc: GraphService) -> GraphQueryPlan:
 
 
 # ─────────────────────────────────────────────
-# Public entrypoint
+# Post-LLM semantic upgrade
+# ─────────────────────────────────────────────
+
+def _upgrade_lookup_to_filter(
+    question: str,
+    plan: GraphQueryPlan,
+    svc: GraphService,
+) -> GraphQueryPlan:
+    """
+    Promote a bare lookup → filter when the LLM missed filter extraction.
+
+    Triggered when:
+    - plan.type == "lookup"
+    - plan.filters is empty
+    - the rule-based parser finds filters for the same entity
+
+    This handles queries like "Show billing documents of type A" or
+    "Which customers are blocked?" where Llama 8B sometimes returns
+    a lookup instead of a filter.
+    """
+    if plan.type != "lookup" or plan.filters:
+        return plan
+
+    # Run rule-based parser to check for filter intent
+    fallback = _rule_based_fallback(question, svc)
+    if (
+        fallback.type == "filter"
+        and fallback.filters
+        and fallback.start_entity == plan.start_entity
+    ):
+        logger.info(
+            "Upgrading LLM lookup→filter for entity=%s filters=%s",
+            plan.start_entity,
+            [(f.field, f.operator, f.value) for f in fallback.filters],
+        )
+        return GraphQueryPlan(
+            type="filter",
+            start_entity=plan.start_entity,
+            target_entity=None,
+            aggregation=None,
+            path=None,
+            filters=fallback.filters,
+            anomaly=None,
+            confidence=Confidence.MEDIUM,
+        )
+
+    return plan
+
+
+# ─────────────────────────────────────────────
+# v1 planner call
+# ─────────────────────────────────────────────
+
+def _call_planner_v1(
+    question: str,
+    svc: GraphService,
+    key: str,
+    model: str,
+) -> Optional[GraphQueryPlan]:
+    """
+    Call the LLM with the v1 (optimized strict) prompt.
+    Returns a validated GraphQueryPlan or None on failure / LOW confidence.
+    """
+    schema_attrs: dict[str, list[str]] = {}
+    for node in svc._graph.nodes:
+        pks = node.primary_key if isinstance(node.primary_key, list) else [node.primary_key]
+        schema_attrs[node.name] = pks + node.attributes
+
+    valid_entities = set(schema_attrs.keys())
+    compact_schema = _build_compact_schema(svc)
+
+    user_message = _USER_TEMPLATE_V1.format(
+        user_query=question,
+        schema=compact_schema,
+    )
+
+    try:
+        raw_text = hf_chat_completion(
+            api_key=key,
+            model=model,
+            system_prompt=_SYSTEM_PROMPT_V1,
+            user_prompt=user_message,
+            max_tokens=512,
+            temperature=0.0,
+            endpoint=os.getenv("HUGGINGFACE_API_URL", "https://router.huggingface.co/v1/chat/completions"),
+            provider=os.getenv("HUGGINGFACE_PROVIDER", ""),
+        )
+        logger.debug("v1 planner raw output: %s", raw_text[:300])
+
+        raw_json = _extract_json(raw_text)
+        if raw_json is None:
+            logger.warning("v1 planner returned non-JSON output")
+            return None
+
+        plan = _validate_plan_v1(raw_json, valid_entities, schema_attrs)
+        if plan is None:
+            logger.warning("v1 plan failed validation")
+            return None
+
+        # Escalate LOW-confidence plans to the full planner
+        if plan.confidence == Confidence.LOW:
+            logger.info("v1 plan confidence=LOW — escalating to full planner")
+            return None
+
+        logger.info(
+            "v1 plan accepted: type=%s entity=%s filters=%d confidence=%s",
+            plan.type, plan.start_entity, len(plan.filters), plan.confidence,
+        )
+        return plan
+
+    except Exception as exc:
+        logger.warning("v1 planner call failed (%s) — escalating to full planner", exc)
+        return None
+
+
+def plan_query_v1(
+    question: str,
+    svc: GraphService,
+    api_key: Optional[str] = None,
+    model: str = "meta-llama/Llama-3.1-8B-Instruct",
+) -> GraphQueryPlan:
+    """
+    Translate a natural-language question into a GraphQueryPlan using the
+    optimized v1 (strict, compact) prompt.
+
+    v1 covers: lookup, filter, simple aggregate.
+    Falls back to the full planner for complex intent (traverse / path / anomaly)
+    or LOW-confidence outputs; falls back to the rule-based parser if no API key.
+
+    Returns:
+        A validated GraphQueryPlan — never raises.
+    """
+    question = sanitize_question(question)
+    key = api_key or os.getenv("HUGGINGFACE_API_KEY", "")
+
+    if is_blocked_question(question):
+        logger.warning("Blocked prompt; using deterministic fallback")
+        fallback = _rule_based_fallback(question, svc)
+        fallback.confidence = downgrade_confidence(fallback.confidence)
+        return fallback
+
+    if not key:
+        logger.info("No API key — using rule-based fallback")
+        return _rule_based_fallback(question, svc)
+
+    # Questions with complex cross-entity intent skip v1 entirely
+    if _needs_full_planner(question):
+        logger.info("Complex intent detected — skipping v1, using full planner")
+        return plan_query(question, svc, api_key=key, model=model)
+
+    plan = _call_planner_v1(question, svc, key, model)
+    if plan is not None:
+        plan = _upgrade_lookup_to_filter(question, plan, svc)
+        return plan
+
+    # Escalate: v1 couldn't produce a confident plan
+    logger.info("v1 escalation → full planner")
+    return plan_query(question, svc, api_key=key, model=model)
+
+
+# ─────────────────────────────────────────────
+# Public entrypoint (full planner)
 # ─────────────────────────────────────────────
 
 def plan_query(
@@ -496,6 +867,7 @@ def plan_query(
         entities=json.dumps(schema["entities"], indent=2),
         relationships="\n".join(schema["relationships"]),
         attributes_per_entity=json.dumps(schema["attributes_per_entity"], indent=2),
+        graph_insights=schema.get("graph_insights", ""),
     )
 
     try:
@@ -527,6 +899,7 @@ def plan_query(
             return _rule_based_fallback(question, svc)
 
         plan = _coerce_missing_link_intent(question, plan, svc)
+        plan = _upgrade_lookup_to_filter(question, plan, svc)
 
         logger.info(
             "LLM plan: type=%s start=%s target=%s confidence=%s",

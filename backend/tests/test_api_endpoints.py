@@ -199,12 +199,18 @@ class TestAnswerEndpoint:
         assert r.json()["answer"] != ""
 
     def test_answer_is_grounded_not_hallucinated(self, client):
-        """Answer must not contain entities not in the graph."""
+        """Answer must not return fabricated data for non-existent entities."""
         r = client.post("/query/answer", json={"question": "show me unicorns"})
         body = r.json()
         answer = body["answer"].lower()
-        # Should not invent data — will say no results or ask for clarification
-        assert "unicorn" not in answer
+        # Should not invent records — "here are your unicorns", "found 5 unicorn records", etc.
+        # The word may appear legitimately as "unicorns is not a valid entity" — that's fine.
+        hallucination_phrases = ["here are your unicorn", "found unicorn", "unicorn records", "5 unicorn"]
+        for phrase in hallucination_phrases:
+            assert phrase not in answer, f"Answer appears to hallucinate: {phrase!r}"
+        # Execution should also return empty or error — no fabricated records
+        exec_status = body.get("execution", {}).get("status")
+        assert exec_status in ("empty", "error", None), f"Unexpected exec status: {exec_status}"
 
     def test_response_has_all_three_parts(self, client):
         r = client.post("/query/answer", json={"question": "List products"})

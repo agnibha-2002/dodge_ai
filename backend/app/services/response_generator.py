@@ -64,7 +64,13 @@ each delivery can generate separate invoices for different line items."
    - Do NOT say "Query executed successfully" — answer the question instead.
 
 6. EMPTY RESULTS — say "I couldn't find any matching records for that query." \
-then suggest what the user might try instead.
+then use the Graph context section (if present) to suggest related entities \
+in the same cluster the user might explore instead.
+
+9. GRAPH CONTEXT — if a "Graph context" section is present in the input, use \
+it to: (a) explain how queried entities relate structurally, (b) mention the \
+cluster they belong to when relevant, (c) suggest bridge entities for \
+cross-cluster questions.
 
 7. ERRORS — report clearly: "Something went wrong: [brief reason]."
 
@@ -79,7 +85,7 @@ User query:
 
 Execution result:
 {result_json}
-"""
+{graph_context_section}"""
 
 
 def generate_response(
@@ -87,6 +93,7 @@ def generate_response(
     execution_result: dict[str, Any],
     api_key: Optional[str] = None,
     model: str = "meta-llama/Llama-3.1-8B-Instruct",
+    graph_context: str = "",
 ) -> str:
     """
     Call Hugging Face to generate a grounded natural-language answer.
@@ -96,6 +103,10 @@ def generate_response(
         execution_result: The serialised GraphExecResult dict.
         api_key:          Hugging Face API key (falls back to HUGGINGFACE_API_KEY env var).
         model:            Hugging Face model ID.
+        graph_context:    Optional cluster/hub context from graph_analytics.  When
+                          provided the model can reference cluster membership, suggest
+                          related entities for empty results, and explain cross-cluster
+                          traversals more naturally.
 
     Returns:
         A natural-language answer string. Never raises — returns a fallback
@@ -109,9 +120,13 @@ def generate_response(
 
     try:
         safe_execution = redact_execution_for_llm(execution_result)
+        graph_context_section = (
+            f"\nGraph context:\n{graph_context}" if graph_context else ""
+        )
         user_message = _USER_TEMPLATE.format(
             user_query=user_query,
             result_json=json.dumps(safe_execution, indent=2, default=str),
+            graph_context_section=graph_context_section,
         )
 
         answer = hf_chat_completion(

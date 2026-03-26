@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, ChevronLeft, PanelRightClose } from "lucide-react";
 import { apiUrl } from "./api";
 
 // ─── Plan types ───────────────────────────────────────────────────────────────
@@ -554,7 +554,34 @@ function _summarize(exec?: Execution): string {
 
 // ─── ChatPanel ────────────────────────────────────────────────────────────────
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  isMinimized?: boolean;
+  onToggle?: () => void;
+  /** Called whenever a query result arrives; passes the entity names to highlight in the graph. */
+  onHighlight?: (entities: string[]) => void;
+}
+
+// ─── Entity extraction from execution result ──────────────────────────────────
+
+function extractHighlightedEntities(exec: Execution): string[] {
+  if (!exec?.result) return [];
+  const r = exec.result;
+  if (r.type === "lookup")    return [(r as LookupResult).entity].filter(Boolean);
+  if (r.type === "traverse") {
+    const tr = r as TraverseResult;
+    return tr.path?.length ? tr.path : [tr.start_entity, tr.target_entity].filter(Boolean);
+  }
+  if (r.type === "filter")    return [(r as FilterResult).entity].filter(Boolean);
+  if (r.type === "aggregate") return [(r as AggregateResult).entity ?? ""].filter(Boolean);
+  if (r.type === "path")      return (r as PathResult).sequence ?? [];
+  if (r.type === "anomaly") {
+    const anr = r as AnomalyResult;
+    return [anr.start_entity, anr.target_entity].filter(Boolean) as string[];
+  }
+  return [];
+}
+
+export function ChatPanel({ isMinimized = false, onToggle, onHighlight }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>(() => {
     const stored = loadMessages();
     return stored.length > 0 ? stored : [GREETING];
@@ -602,9 +629,14 @@ export function ChatPanel() {
         content = data.answer ?? _summarize(execution);
       }
 
-      setMessages(prev => [...prev, {
-        id: nextId.current++, role: "assistant", content, plan, execution,
-      }]);
+      const assistantMsg: Message = { id: nextId.current++, role: "assistant", content, plan, execution };
+      setMessages(prev => [...prev, assistantMsg]);
+
+      // Highlight the entities involved in this query result in the graph
+      if (execution && onHighlight) {
+        const entities = extractHighlightedEntities(execution);
+        if (entities.length > 0) onHighlight(entities);
+      }
     } catch (err) {
       setMessages(prev => [...prev, {
         id: nextId.current++,
@@ -624,6 +656,32 @@ export function ChatPanel() {
     );
   }
 
+  // ── Minimized: icon-only vertical strip ─────
+  if (isMinimized) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", height: "100%",
+        background: D.surface, borderLeft: `1px solid ${D.border}`,
+        alignItems: "center", paddingTop: 12, overflow: "hidden",
+        minWidth: 0,
+      }}>
+        <button
+          onClick={onToggle}
+          title="Expand chat"
+          style={{
+            width: 28, height: 28, borderRadius: 7,
+            background: D.surf2, border: `1px solid ${D.border}`,
+            color: D.muted, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <ChevronLeft style={{ width: 14, height: 14 }} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: D.bg, overflow: "hidden", minWidth: 0 }}>
 
@@ -638,12 +696,27 @@ export function ChatPanel() {
           <div style={{ fontSize: 14, fontWeight: 600, color: D.text, lineHeight: 1.2 }}>Dodge AI</div>
           <div style={{ fontSize: 11, color: D.muted, marginTop: 1 }}>Graph Intelligence</div>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
             width: 6, height: 6, borderRadius: "50%", background: "#22c55e",
             boxShadow: "0 0 6px #22c55e80",
           }} />
           <span style={{ fontSize: 11, color: D.muted }}>Live</span>
+          <button
+            onClick={onToggle}
+            title="Minimize chat"
+            style={{
+              width: 24, height: 24, borderRadius: 6,
+              background: "transparent", border: `1px solid ${D.border}`,
+              color: D.muted, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0, transition: "background 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = D.surf2)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <PanelRightClose style={{ width: 13, height: 13 }} />
+          </button>
         </div>
       </div>
 

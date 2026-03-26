@@ -11,12 +11,48 @@ from app.models.query import (
     QueryValidationRequest,
     QueryValidationResponse,
 )
+from app.services.graph_analytics import (
+    build_analytics,
+    cluster_context_for_entities,
+    suggest_related_entities,
+)
 from app.services.graph_executor import execute_graph_query, execute_plan
 from app.services.graph_service import GraphService
-from app.services.llm_query_planner import plan_query
+from app.services.llm_query_planner import plan_query, plan_query_v1
 from app.services.query_parser import parse_structured_graph_query
 from app.services.query_validator import validate_structured_query
+from app.services.query_logger import log_query_lifecycle
 from app.services.response_generator import generate_response
+
+
+def _graph_context_for_response(plan_entities: list[str], execution_result, svc: GraphService) -> str:
+    """
+    Build a concise graph-context string to pass to the response generator.
+    Includes cluster membership of involved entities and, for empty results,
+    suggestions of related entities in the same cluster.
+    """
+    try:
+        analytics = build_analytics(svc)
+        parts: list[str] = []
+
+        cluster_ctx = cluster_context_for_entities(plan_entities, analytics)
+        if cluster_ctx:
+            parts.append(cluster_ctx)
+
+        # For empty results, suggest cluster peers as alternatives
+        status = getattr(execution_result, "status", None) or (
+            execution_result.get("status") if isinstance(execution_result, dict) else None
+        )
+        if status == "empty" and plan_entities:
+            suggestions = suggest_related_entities(plan_entities[0], analytics)
+            if suggestions:
+                parts.append(
+                    f"Related entities to explore: {', '.join(suggestions[:4])}"
+                )
+
+        return "\n".join(parts)
+    except Exception:
+        return ""
 
 router = APIRouter(tags=["Query"])
 
@@ -111,11 +147,23 @@ def answer_query(
     """
     parsed = parse_structured_graph_query(request.question, svc)
     execution = execute_graph_query(query=parsed, svc=svc)
+
+    answer_entities = [e for e in [parsed.start_node.entity, parsed.target_entity] if e]
+    graph_context = _graph_context_for_response(answer_entities, execution, svc)
+
     answer = generate_response(
         user_query=request.question,
         execution_result=execution.model_dump(),
+        graph_context=graph_context,
     )
 
+    log_query_lifecycle(
+        query=request.question,
+        plan=parsed,
+        execution_result=execution.model_dump(),
+        answer=answer,
+        planner="fallback",
+    )
     return {
         "answer": answer,
         "parsed_query": parsed.model_dump(),
@@ -142,11 +190,26 @@ def plan_and_execute(
 
     Falls back to the rule-based parser if no API key is configured.
     """
-    plan = plan_query(request.question, svc)
+    plan = plan_query_v1(request.question, svc)
     execution = execute_plan(plan=plan, svc=svc)
+
+    # Build cluster/hub context from the entities involved in this plan
+    plan_entities = [e for e in [plan.start_entity, plan.target_entity] if e]
+    if plan.type == "path" and plan.path and plan.path.sequence:
+        plan_entities = list(plan.path.sequence)
+    graph_context = _graph_context_for_response(plan_entities, execution, svc)
+
     answer = generate_response(
         user_query=request.question,
         execution_result=execution.model_dump(),
+        graph_context=graph_context,
+    )
+    log_query_lifecycle(
+        query=request.question,
+        plan=plan,
+        execution_result=execution.model_dump(),
+        answer=answer,
+        planner="v1",
     )
     return PlanResponse(
         plan=plan,

@@ -20,7 +20,7 @@ import type {
   RecordForceLink,
 } from "./types";
 import "./App.css";
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle, usePanelRef } from "react-resizable-panels";
 
 const MAX_NODES = 200;
 const MAX_EDGES = 500;
@@ -189,6 +189,16 @@ export default function App() {
   // Controls
   const [showOverlay, setShowOverlay] = useState(true);
 
+  // Chat panel collapse state
+  const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const chatPanelRef = usePanelRef();
+
+  // Graph ↔ Chat: entities to highlight (set by query results from chat)
+  const [highlightedEntities, setHighlightedEntities] = useState<Set<string>>(new Set());
+  const handleHighlight = useCallback((entities: string[]) => {
+    setHighlightedEntities(new Set(entities));
+  }, []);
+
   // Records modal
   const [recordsNodeName, setRecordsNodeName] = useState<string | null>(null);
 
@@ -269,6 +279,7 @@ export default function App() {
     setHovered(null);
     setHoveredRecord(null);
     setRecordGraphError(null);
+    setHighlightedEntities(new Set());
     // Reset zoom-to-fit so it re-triggers on each mode entry
     if (mode === "record") didFitRecordRef.current = false;
     setGraphMode(mode);
@@ -451,6 +462,19 @@ export default function App() {
     }
   }, [graphMode]);
 
+  // ── Chat panel collapse/expand ─────────────
+  const handleChatToggle = useCallback(() => {
+    const ref = chatPanelRef.current;
+    if (!ref) return;
+    if (ref.isCollapsed()) {
+      ref.expand();
+      setIsChatMinimized(false);
+    } else {
+      ref.collapse();
+      setIsChatMinimized(true);
+    }
+  }, [chatPanelRef]);
+
   // ── Full-screen status screens ─────────────
   if (uiState === "loading") {
     return <div className="status"><span className="spinner" />Loading graph data...</div>;
@@ -514,7 +538,7 @@ export default function App() {
           <div className="graph-controls">
             <button className="control-btn" onClick={handleMinimize}>
               <Minimize2 />
-              Minimize
+              Fit View
             </button>
             {graphMode === "entity" && (
               <button
@@ -584,16 +608,29 @@ export default function App() {
             nodeLabel=""
             onNodeClick={handleNodeClick}
             onNodeHover={(node) => setHovered((node as GraphNode) ?? null)}
-            onBackgroundClick={() => setSelectedId(null)}
+            onBackgroundClick={() => { setSelectedId(null); setHighlightedEntities(new Set()); }}
             nodeCanvasObject={(rawNode, ctx, globalScale) => {
               const node = rawNode as GraphNode;
-              const isSelected  = node.id === selectedId;
-              const isNeighbour = neighbourIds.has(node.id);
-              const isDimmed    = selectedId !== null && !isSelected && !isNeighbour;
-              const isExpanding = expandingIds.has(node.id);
+              const isSelected    = node.id === selectedId;
+              const isNeighbour   = neighbourIds.has(node.id);
+              const isHighlighted = highlightedEntities.size > 0 && highlightedEntities.has(node.id);
+              const isDimmed      = selectedId !== null && !isSelected && !isNeighbour
+                                      || (highlightedEntities.size > 0 && !isHighlighted && selectedId === null);
+              const isExpanding   = expandingIds.has(node.id);
 
-              const r = isSelected ? 10 : isNeighbour ? 7 : 6;
+              const r = isSelected ? 10 : isHighlighted ? 9 : isNeighbour ? 7 : 6;
               ctx.globalAlpha = isDimmed ? 0.25 : 1;
+
+              // Highlight glow ring (drawn behind the node)
+              if (isHighlighted && !isSelected) {
+                ctx.beginPath();
+                ctx.arc(node.x!, node.y!, r + 5, 0, 2 * Math.PI);
+                ctx.fillStyle = "rgba(245, 158, 11, 0.18)";
+                ctx.fill();
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+              }
 
               // Node circle
               ctx.beginPath();
@@ -603,6 +640,12 @@ export default function App() {
                 ctx.fillStyle = "#3b82f6";
                 ctx.fill();
                 ctx.strokeStyle = "#2563eb";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+              } else if (isHighlighted) {
+                ctx.fillStyle = "#fbbf24";
+                ctx.fill();
+                ctx.strokeStyle = "#d97706";
                 ctx.lineWidth = 2;
                 ctx.stroke();
               } else {
@@ -623,15 +666,15 @@ export default function App() {
                 ctx.stroke();
               }
 
-              // Label
-              if (globalScale >= 1.5 || isSelected) {
+              // Label — always show for highlighted nodes
+              if (globalScale >= 1.5 || isSelected || isHighlighted) {
                 const fontSize = isSelected
                   ? Math.min(Math.max(11 / globalScale, 4), 12)
                   : Math.min(Math.max(9 / globalScale, 3), 10);
-                ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+                ctx.font = `${isHighlighted ? 700 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "top";
-                ctx.fillStyle = isSelected ? "#1e40af" : "#6b7280";
+                ctx.fillStyle = isSelected ? "#1e40af" : isHighlighted ? "#92400e" : "#6b7280";
                 ctx.fillText(node.label, node.x!, node.y! + r + 3);
               }
 
@@ -644,11 +687,18 @@ export default function App() {
               ctx.arc(node.x!, node.y!, 12, 0, 2 * Math.PI);
               ctx.fill();
             }}
-            linkColor={() => "#93c5fd"}
+            linkColor={(rawLink) => {
+              const link = rawLink as GraphLink;
+              const src = typeof link.source === "string" ? link.source : link.source.id;
+              const tgt = typeof link.target === "string" ? link.target : link.target.id;
+              if (highlightedEntities.has(src) && highlightedEntities.has(tgt)) return "#f59e0b";
+              return "#93c5fd";
+            }}
             linkWidth={(rawLink) => {
               const link = rawLink as GraphLink;
               const src = typeof link.source === "string" ? link.source : link.source.id;
               const tgt = typeof link.target === "string" ? link.target : link.target.id;
+              if (highlightedEntities.has(src) && highlightedEntities.has(tgt)) return 3;
               return (selectedId && (src === selectedId || tgt === selectedId)) ? 2.5 : 1;
             }}
             linkDirectionalArrowLength={5}
@@ -854,8 +904,20 @@ export default function App() {
             className="resize-handle"
             style={{ width: 5, cursor: "col-resize", background: "#e2e8f0", flexShrink: 0 }}
           />
-          <Panel defaultSize="35" minSize="20" maxSize="55">
-            <ChatPanel />
+          <Panel
+            defaultSize="35"
+            minSize="20"
+            maxSize="55"
+            collapsible={true}
+            collapsedSize={3}
+            panelRef={chatPanelRef}
+            onResize={(size) => {
+              // Keep state in sync when user drags the resize handle to collapse
+              // v4: onResize receives a plain number (percentage), not an object
+              setIsChatMinimized(size <= 5);
+            }}
+          >
+            <ChatPanel isMinimized={isChatMinimized} onToggle={handleChatToggle} onHighlight={handleHighlight} />
           </Panel>
       </PanelGroup>
 

@@ -153,6 +153,12 @@ header {
   overflow: hidden;
   position: relative;
   z-index: 1;
+  transition: width 0.2s ease;
+}
+
+/* Smooth panel collapse/expand — applied to the Panel wrapper div via its parent flex layout */
+.body-row > [data-panel] {
+  transition: flex-basis 0.2s ease, max-width 0.2s ease;
 }
 
 /* ── Resize handle ───────────────────────── */

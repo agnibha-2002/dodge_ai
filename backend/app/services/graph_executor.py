@@ -131,8 +131,9 @@ class _GraphAdapter:
         if not node:
             return None
         pks = _ensure_list(node.primary_key)
-        # Pull up to 50 records and scan for matching PK
-        resp = self._svc.get_node_records(entity, limit=50)
+        # Pull all records (up to record_count) to ensure we don't miss any
+        scan_limit = max(node.record_count or 50, 50)
+        resp = self._svc.get_node_records(entity, limit=scan_limit)
         if not resp:
             return None
         for row in resp.records:
@@ -358,18 +359,25 @@ def _exec_traverse(query: ParsedGraphQuery, g: _GraphAdapter) -> GraphExecResult
         join_key = _infer_fk_field(start, target, g)
         reverse_key = _infer_fk_field(target, start, g)
 
-        all_records, _ = g.get_records(target, limit=50)
+        target_node = g.node_info(target)
+        scan_limit = (target_node.record_count or 50) if target_node else 50
+        all_records, _ = g.get_records(target, limit=scan_limit)
+
+        matched: list[dict] = []
 
         # Try forward FK: target records contain a field that matches start_id
         if join_key:
             matched = [r for r in all_records
                        if str(r.get(join_key, "")).upper() == start_id.upper()]
-        elif reverse_key:
-            # Try reverse: look for target PK in start record's FK field
+
+        # Try reverse FK if forward didn't match
+        if not matched and reverse_key:
             matched = [r for r in all_records
                        if str(r.get(reverse_key, "")).upper() == start_id.upper()]
-        else:
-            # Last resort: scan all fields for the ID value
+
+        # Last resort: scan all field values for the ID (handles synthetic data
+        # where FK fields may be absent but sequential IDs coincide)
+        if not matched:
             matched = [r for r in all_records
                        if any(str(v).upper() == start_id.upper() for v in r.values())]
 
@@ -402,7 +410,9 @@ def _exec_filter(query: ParsedGraphQuery, g: _GraphAdapter) -> GraphExecResult:
             error=f"Entity '{entity}' not found in graph.",
         )
 
-    records, _ = g.get_records(entity, limit=50)
+    node = g.node_info(entity)
+    scan_limit = max(node.record_count or 50, 50) if node else 50
+    records, _ = g.get_records(entity, limit=scan_limit)
     filters = query.filters
 
     if filters:
@@ -446,18 +456,38 @@ def _exec_aggregate(plan: Any, g: _GraphAdapter) -> GraphExecResult:
     metric = agg_spec.metric
     limit = agg_spec.limit or 10
 
-    # COUNT without a field → use schema record_count
-    if metric == "count" and not agg_spec.target:
+    # Strip table prefixes from group_by and target (e.g. "Customer.customer_id" → "customer_id")
+    def _strip_prefix(val: Optional[str]) -> Optional[str]:
+        if val and "." in val:
+            return val.split(".", 1)[1]
+        return val
+
+    agg_target = _strip_prefix(agg_spec.target)
+    agg_group_by = _strip_prefix(agg_spec.group_by)
+
+    # COUNT without a numeric field → group-by count using target entity.
+    # Also force group-by branch when target_entity is a valid entity in the graph
+    # (Llama sometimes sets agg.target to a table.field reference like "SalesOrder.sales_order_id"
+    # when it means "count SalesOrders per Customer" — detect and redirect.)
+    _is_cross_entity_count = (
+        metric == "count"
+        and plan.target_entity
+        and g.has_entity(plan.target_entity)
+    )
+    if metric == "count" and (not agg_target or _is_cross_entity_count):
         target_entity = plan.target_entity
         rows: list[dict] = []
         if target_entity and g.has_entity(target_entity):
             target_node = g.node_info(target_entity)
             # Group-by: count target records per group_by field in start_entity
-            src_records, _ = g.get_records(entity, limit=50)
-            tgt_records, _ = g.get_records(target_entity, limit=50)
+            src_node = g.node_info(entity)
+            src_limit = max(src_node.record_count or 50, 50) if src_node else 50
+            tgt_limit = max(target_node.record_count or 50, 50) if target_node else 50
+            src_records, _ = g.get_records(entity, limit=src_limit)
+            tgt_records, _ = g.get_records(target_entity, limit=tgt_limit)
 
             # Attempt FK join via shared field name
-            group_field = agg_spec.group_by
+            group_field = agg_group_by
             join_key = _infer_fk_field(entity, target_entity, g)
 
             if join_key and src_records and tgt_records:
@@ -551,8 +581,9 @@ def _exec_aggregate(plan: Any, g: _GraphAdapter) -> GraphExecResult:
         )
 
     # Numeric aggregation on a field
-    field = agg_spec.target
-    records, _ = g.get_records(entity, limit=50)
+    field = agg_target
+    scan_limit = max(node.record_count or 50, 50) if node else 50
+    records, _ = g.get_records(entity, limit=scan_limit)
 
     if plan.filters:
         records = _apply_plan_filters(records, plan.filters, entity)
@@ -890,13 +921,31 @@ def execute_plan(
 # Plan adapters (GraphQueryPlan → duck-typed query objects)
 # ─────────────────────────────────────────────
 
+def _extract_id_from_filters(filters: list, entity: Optional[str]) -> Optional[str]:
+    """
+    Extract a specific record ID from plan filters.
+    Accepts: field="id", field="pk", or any field ending in "_id" scoped to
+    the start entity (e.g. "billing_document_id", "sales_order_id").
+    Returns the first matching = filter value, or None.
+    """
+    if not filters:
+        return None
+    # Priority 1: explicit id/pk field
+    for f in filters:
+        if f.field in ("id", "pk") and f.operator == "=":
+            return f.value
+    # Priority 2: entity-scoped *_id field
+    for f in filters:
+        if f.operator == "=" and f.field.endswith("_id"):
+            if not entity or not f.entity or f.entity == entity:
+                return f.value
+    return None
+
+
 class _PlanLookupAdapter:
     """Adapts GraphQueryPlan to the interface expected by _exec_lookup."""
     def __init__(self, plan: Any) -> None:
-        id_val = next(
-            (f.value for f in (plan.filters or []) if f.field in ("id", "pk") and f.operator == "="),
-            None,
-        )
+        id_val = _extract_id_from_filters(plan.filters or [], plan.start_entity)
 
         class _StartNode:
             entity = plan.start_entity
@@ -909,12 +958,7 @@ class _PlanLookupAdapter:
 class _PlanTraverseAdapter:
     """Adapts GraphQueryPlan to the interface expected by _exec_traverse."""
     def __init__(self, plan: Any) -> None:
-        # Extract ID from plan filters (e.g. "billing document 91150187")
-        id_val = next(
-            (f.value for f in (plan.filters or [])
-             if f.field in ("id", "pk") and f.operator == "="),
-            None,
-        )
+        id_val = _extract_id_from_filters(plan.filters or [], plan.start_entity)
 
         class _StartNode:
             entity = plan.start_entity
